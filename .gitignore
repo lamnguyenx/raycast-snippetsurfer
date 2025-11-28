@@ -144,4 +144,7 @@ dist
 # SvelteKit build / generate output
 .svelte-kit
 
+# Raycast generated files
+raycast-env.d.ts
+
 # End of https://www.toptal.com/developers/gitignore/api/node,js
