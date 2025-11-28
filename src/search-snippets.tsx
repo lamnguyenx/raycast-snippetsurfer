@@ -1,21 +1,71 @@
 import { Icon, List, showToast, Toast, ActionPanel, Action, getPreferenceValues } from "@raycast/api";
 
 import { useEffect, useState } from "react";
-import type { Snippet, State } from "./types";
-import SnippetContent from "./components/SnippetContent";
-import CustomActionPanel from "./components/CustomActionPanel";
-import { storeLastCopied, clearUnusedSnippets, orderSnippets } from "./utils/LocalStorageHelper";
-import { expandHomeDirectory, loadAllSnippets } from "./utils/SnippetsLoader";
+import { spawn } from "child_process";
+import * as os from "os";
+// Raycast API imports are now in the second import statement
+import type { State, HeavyDutySnippet } from "./types";
+import { HeavyDutyActionPanel } from "./components/CustomActionPanel";
+import { expandHomeDirectory, discoverAllSnippets, loadSnippetPreview } from "./utils/SnippetsLoader";
 
 export default function Command() {
-  const [state, setState] = useState<State>({ snippets: [], isLoading: true });
+  const [state, setState] = useState<State>({ heavyDutySnippets: [], isLoading: true });
+  const [currentPreview, setCurrentPreview] = useState<string | null>(null);
 
-  const handleAction = async function (snippet: Snippet) {
-    await storeLastCopied(snippet);
+  // Lazy preview loading (uses LRU cache)
+  const loadPreview = async (snippet: HeavyDutySnippet) => {
+    try {
+      const preview = await loadSnippetPreview(snippet);
+      setCurrentPreview(preview);
+    } catch (error) {
+      const errorMessage = `Failed to load preview: ${error instanceof Error ? error.message : "Unknown error"}`;
+      setCurrentPreview(errorMessage);
+    }
+  };
 
-    const orderedSnippets = await orderSnippets(state.snippets ?? []);
-    const filteredSnippets = await orderSnippets(state.filteredSnippets ?? state.snippets ?? []);
-    setState((previous) => ({ ...previous, snippets: orderedSnippets, filteredSnippets: filteredSnippets }));
+  // Initial data fetch
+  const fetchData = async () => {
+    try {
+      const preferences = await getPreferenceValues();
+      const path = preferences["folderPath"];
+      const allPathsTmp = preferences["secondaryFolderPaths"]
+        ? [path, ...preferences["secondaryFolderPaths"].split(",")]
+        : [path];
+      const allPaths = Array.from(new Set(allPathsTmp.map(expandHomeDirectory)));
+
+      const snippetsPromises = allPaths.map(discoverAllSnippets);
+      const snippetsArrays = await Promise.all(snippetsPromises);
+      const heavyDutySnippets = snippetsArrays.flatMap(({ snippets }) => snippets);
+      const errors = snippetsArrays.flatMap(({ errors }) => errors);
+
+      // Extract folders from HeavyDutySnippet metadata
+      const folders = Array.from(
+        new Set(
+          heavyDutySnippets.map((i) => {
+            return i.folder;
+          })
+        )
+      );
+
+      // Sort by modification time (newest first)
+      const orderedSnippets = heavyDutySnippets.sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime());
+
+      setState((previous) => ({
+        ...previous,
+        heavyDutySnippets: orderedSnippets,
+        filteredHeavyDutySnippets: orderedSnippets,
+        folders: folders,
+        paths: allPaths,
+        errors: errors,
+      }));
+    } catch (err) {
+      setState((previous) => ({
+        ...previous,
+        errors: [err instanceof Error ? err : new Error("Something went wrong")],
+      }));
+    }
+
+    setState((previous) => ({ ...previous, isLoading: false }));
   };
 
   // Fetch primary action preference
@@ -29,92 +79,29 @@ export default function Command() {
   }, []);
 
   // Initial data fetch
-  const fetchData = async () => {
-    try {
-      const preferences = await getPreferenceValues();
-      const path = preferences["folderPath"];
-      const allPathsTmp = preferences["secondaryFolderPaths"]
-        ? [path, ...preferences["secondaryFolderPaths"].split(",")]
-        : [path];
-      const allPaths = Array.from(new Set(allPathsTmp.map(expandHomeDirectory)));
-
-      const snippetsPromises = allPaths.map(loadAllSnippets);
-      const snippetsArrays = await Promise.all(snippetsPromises);
-      const snippets = snippetsArrays.flatMap(({ snippets }) => snippets);
-      const errors = snippetsArrays.flatMap(({ errors }) => errors);
-
-      const folders = Array.from(
-        new Set(
-          snippets.map((i) => {
-            return i.folder;
-          })
-        )
-      );
-
-      const tags = Array.from(
-        new Set(
-          snippets.flatMap((i) => {
-            return i.content.tags ?? [];
-          })
-        )
-      );
-
-      await clearUnusedSnippets(snippets);
-      const orderedSnippets = await orderSnippets(snippets);
-
-      setState((previous) => ({
-        ...previous,
-        snippets: orderedSnippets,
-        filteredSnippets: orderedSnippets,
-        folders: folders,
-        tags: tags,
-        paths: allPaths,
-        errors: errors,
-      }));
-    } catch (err) {
-      setState((previous) => ({
-        ...previous,
-        errors: [err instanceof Error ? err : new Error("Something went wrong")],
-      }));
-    }
-
-    setState((previous) => ({ ...previous, isLoading: false }));
-  };
   useEffect(() => {
     fetchData();
   }, []);
 
-  // Handle filter folder
+  // Handle filter folder (HeavyDutySnippet version)
   useEffect(() => {
     if (state.selectedFilter && state.selectedFilter != "all") {
-      const handleFilterByFolder = (snippet: Snippet, filterValue: string) => {
-        return snippet.folder == filterValue;
-      };
-      const handleFilterByTags = (snippet: Snippet, filterValue: string) => {
-        return snippet.content.tags?.includes(filterValue);
-      };
+      if (state.heavyDutySnippets) {
+        let filtered: HeavyDutySnippet[] = [];
 
-      if (state.snippets) {
-        let handleFilterMethod = (_: Snippet) => true;
         if (state.selectedFilter.startsWith("folder:")) {
           const filterValue = state.selectedFilter.substring("folder:".length);
-          handleFilterMethod = (snippet: Snippet) => {
-            return handleFilterByFolder(snippet, filterValue);
-          };
-        } else if (state.selectedFilter.startsWith("tag:")) {
-          const filterValue = state.selectedFilter.substring("tag:".length);
-          handleFilterMethod = (snippet: Snippet) => {
-            return handleFilterByTags(snippet, filterValue);
-          };
+          filtered = state.heavyDutySnippets.filter((snippet) => snippet.folder === filterValue);
         }
+        // Note: Tag filtering not available in discovery mode
+        // Tags would need to be loaded on-demand for full filtering
 
-        const res = state.snippets.filter(handleFilterMethod);
-        setState((previous) => ({ ...previous, filteredSnippets: res }));
+        setState((previous) => ({ ...previous, filteredHeavyDutySnippets: filtered }));
       }
     } else {
-      setState((previous) => ({ ...previous, filteredSnippets: state.snippets }));
+      setState((previous) => ({ ...previous, filteredHeavyDutySnippets: state.heavyDutySnippets }));
     }
-  }, [state.selectedFilter]);
+  }, [state.selectedFilter, state.heavyDutySnippets]);
 
   if (state.errors && state.errors.length != 0) {
     const options: Toast.Options = {
@@ -125,12 +112,20 @@ export default function Command() {
     showToast(options);
   }
 
-  const loadSnippetsView = state.filteredSnippets && state.filteredSnippets.length != 0;
+  const loadSnippetsView = state.filteredHeavyDutySnippets && state.filteredHeavyDutySnippets.length != 0;
   return (
     <List
       searchBarPlaceholder="Type to search snippets"
       isLoading={state.isLoading}
       isShowingDetail={loadSnippetsView}
+      onSelectionChange={(id) => {
+        if (id && state.filteredHeavyDutySnippets) {
+          const snippet = state.filteredHeavyDutySnippets.find((s) => s.id === id);
+          if (snippet) {
+            loadPreview(snippet);
+          }
+        }
+      }}
       searchBarAccessory={
         <List.Dropdown
           tooltip="Filter on folder"
@@ -147,13 +142,7 @@ export default function Command() {
               })}
             </List.Dropdown.Section>
           )}
-          {state.tags && state.tags.length != 0 && (
-            <List.Dropdown.Section title="Tags">
-              {state.tags.map((i) => {
-                return <List.Dropdown.Item title={i} value={`tag:${i}`} key={i} />;
-              })}
-            </List.Dropdown.Section>
-          )}
+          {/* Tags not available in discovery mode - would need on-demand loading */}
         </List.Dropdown>
       }
     >
@@ -177,26 +166,33 @@ export default function Command() {
         />
       )}
       {loadSnippetsView &&
-        state.filteredSnippets?.map((i) => {
+        state.filteredHeavyDutySnippets?.map((i) => {
+          // Format file size for display
+          const formatFileSize = (bytes: number): string => {
+            if (bytes < 1024) return `${bytes}B`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+            return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+          };
+
           return (
             <List.Item
               id={i.id}
               key={i.id}
               title={i.name}
-              accessories={[{ icon: Icon.Folder, text: i.folder && i.folder !== "." ? i.folder : "" }]}
-              keywords={[i.folder, ...i.content.content.split(" ").concat(i.content.rawMetadata.split(" "))]}
+              accessories={[
+                { icon: Icon.Folder, text: i.folder && i.folder !== "." ? i.folder : "" },
+                { text: formatFileSize(i.fileSize) },
+              ]}
+              keywords={[i.folder, i.name]}
               icon={Icon.Document}
-              detail={<SnippetContent snippet={i} />}
+              detail={<SnippetPreview snippet={i} preview={currentPreview} />}
               actions={
-                <>
-                  <CustomActionPanel
-                    handleAction={handleAction}
-                    snippet={i}
-                    primaryAction={state.primaryAction ?? ""}
-                    reloadSnippets={fetchData}
-                    paths={state.paths ?? []}
-                  />
-                </>
+                <HeavyDutyActionPanel
+                  snippet={i}
+                  primaryAction="copyAndPaste" // New primary action for copy+paste
+                  reloadSnippets={fetchData}
+                  paths={state.paths ?? []}
+                />
               }
             ></List.Item>
           );
@@ -204,3 +200,40 @@ export default function Command() {
     </List>
   );
 }
+
+// Simple preview component for HeavyDutySnippet
+const SnippetPreview = ({ snippet, preview }: { snippet: HeavyDutySnippet; preview: string | null }) => {
+  const title = snippet.name;
+  const folder = snippet.folder && snippet.folder !== "." ? snippet.folder : "";
+  const fileSize =
+    snippet.fileSize < 1024
+      ? `${snippet.fileSize}B`
+      : snippet.fileSize < 1024 * 1024
+      ? `${(snippet.fileSize / 1024).toFixed(1)}KB`
+      : `${(snippet.fileSize / (1024 * 1024)).toFixed(1)}MB`;
+
+  // Format file path with ~ instead of $HOME
+  const homeDir = os.homedir();
+  const displayPath = snippet.fullPath.replace(homeDir, "~");
+
+  const content = preview || "Loading preview...";
+
+  // Calculate line count for preview
+  const previewLines = content === "Loading preview..." ? 0 : content.split("\n").length;
+
+  return (
+    <List.Item.Detail
+      markdown={`### ${title}${folder ? ` - ${folder}` : ""}
+**Path:** \`${displayPath}\`
+
+**Size:** ${fileSize} **Lines:** ${previewLines}
+
+\`(showing first 50 lines)\`
+
+\`\`\`
+${content}
+\`\`\`
+`}
+    />
+  );
+};
