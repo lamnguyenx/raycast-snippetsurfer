@@ -13,7 +13,7 @@ async function loadAllSnippets(startPath: string): Promise<{ snippets: Snippet[]
   const snippets: Snippet[] = [];
   const errors: Error[] = [];
 
-  async function readDirectory(directoryPath: string): Promise<void> {
+  async function readDirectory(directoryPath: string, currentRelativePath: string): Promise<void> {
     const entries = await fs.promises.readdir(directoryPath, { withFileTypes: true });
 
     // Array to store promises for file processing
@@ -21,16 +21,21 @@ async function loadAllSnippets(startPath: string): Promise<{ snippets: Snippet[]
 
     for (const entry of entries) {
       const fullPath = path.join(directoryPath, entry.name);
+      const entryRelativePath = path.join(currentRelativePath, entry.name);
 
-      if (!entry.name.startsWith(".")) {
-        const extension = path.extname(entry.name);
-        if (entry.isDirectory()) {
+      const isHidden = entry.name.startsWith(".");
+      const extension = path.extname(entry.name);
+      try {
+        const stats = await fs.promises.stat(fullPath);
+        if (stats.isDirectory()) {
           // Queue directory processing concurrently
-          filePromises.push(readDirectory(fullPath));
-        } else if (supportedExtensions.includes(extension)) {
+          filePromises.push(readDirectory(fullPath, entryRelativePath));
+        } else if (!isHidden && supportedExtensions.includes(extension)) {
           // Queue file processing concurrently
-          filePromises.push(processFile(fullPath, extension));
+          filePromises.push(processFile(fullPath, entryRelativePath, extension));
         }
+      } catch (error) {
+        // Skip entries that can't be stat'ed (e.g., broken symlinks)
       }
     }
 
@@ -38,8 +43,7 @@ async function loadAllSnippets(startPath: string): Promise<{ snippets: Snippet[]
     await Promise.all(filePromises);
   }
 
-  async function processFile(fullPath: string, extension: string): Promise<void> {
-    const relativePath = path.relative(startPath, fullPath);
+  async function processFile(fullPath: string, relativePath: string, extension: string): Promise<void> {
     if ([".yml", ".yaml"].includes(extension)) {
       const res = await loadYaml(relativePath, fullPath);
       snippets.push(...res.snippets);
@@ -53,7 +57,7 @@ async function loadAllSnippets(startPath: string): Promise<{ snippets: Snippet[]
     }
   }
 
-  await readDirectory(startPath);
+  await readDirectory(startPath, ".");
   return { snippets, errors };
 }
 
@@ -84,7 +88,7 @@ async function discoverAllSnippets(startPath: string): Promise<{ snippets: Heavy
   const snippets: HeavyDutySnippet[] = [];
   const errors: Error[] = [];
 
-  async function readDirectory(directoryPath: string): Promise<void> {
+  async function readDirectory(directoryPath: string, currentRelativePath: string): Promise<void> {
     try {
       const entries = await fs.promises.readdir(directoryPath, { withFileTypes: true });
 
@@ -93,16 +97,21 @@ async function discoverAllSnippets(startPath: string): Promise<{ snippets: Heavy
 
       for (const entry of entries) {
         const fullPath = path.join(directoryPath, entry.name);
+        const entryRelativePath = path.join(currentRelativePath, entry.name);
 
-        if (!entry.name.startsWith(".")) {
-          const extension = path.extname(entry.name);
-          if (entry.isDirectory()) {
+        const isHidden = entry.name.startsWith(".");
+        const extension = path.extname(entry.name);
+        try {
+          const stats = await fs.promises.stat(fullPath);
+          if (stats.isDirectory()) {
             // Queue directory processing concurrently
-            filePromises.push(readDirectory(fullPath));
-          } else if (supportedExtensions.includes(extension)) {
+            filePromises.push(readDirectory(fullPath, entryRelativePath));
+          } else if (!isHidden && supportedExtensions.includes(extension)) {
             // Queue file processing concurrently
-            filePromises.push(processFile(fullPath));
+            filePromises.push(processFile(fullPath, entryRelativePath));
           }
+        } catch (error) {
+          // Skip entries that can't be stat'ed (e.g., broken symlinks)
         }
       }
 
@@ -113,10 +122,9 @@ async function discoverAllSnippets(startPath: string): Promise<{ snippets: Heavy
     }
   }
 
-  async function processFile(fullPath: string): Promise<void> {
+  async function processFile(fullPath: string, relativePath: string): Promise<void> {
     try {
       const stats = await fs.promises.stat(fullPath);
-      const relativePath = path.relative(startPath, fullPath);
 
       // Create HeavyDutySnippet with metadata only
       const hash = crypto.createHash("md5");
@@ -138,7 +146,7 @@ async function discoverAllSnippets(startPath: string): Promise<{ snippets: Heavy
     }
   }
 
-  await readDirectory(startPath);
+  await readDirectory(startPath, ".");
   return { snippets, errors };
 }
 
