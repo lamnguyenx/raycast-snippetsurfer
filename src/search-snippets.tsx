@@ -1,8 +1,19 @@
-import { Icon, List, showToast, Toast, ActionPanel, Action, getPreferenceValues } from "@raycast/api";
+import {
+  Icon,
+  List,
+  showToast,
+  Toast,
+  ActionPanel,
+  Action,
+  getPreferenceValues,
+  type KeyModifier,
+  type KeyEquivalent,
+} from "@raycast/api";
 
 import { useEffect, useState } from "react";
 import { spawn } from "child_process";
 import * as os from "os";
+import * as pathMod from "path";
 // Raycast API imports are now in the second import statement
 import type { State, HeavyDutySnippet } from "./types";
 import { HeavyDutyActionPanel } from "./components/CustomActionPanel";
@@ -11,6 +22,38 @@ import { expandHomeDirectory, discoverAllSnippets, loadSnippetPreview } from "./
 export default function Command() {
   const [state, setState] = useState<State>({ heavyDutySnippets: [], isLoading: true });
   const [currentPreview, setCurrentPreview] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState<string>("");
+
+  // Reload shortcut
+  const reloadShortcut = { modifiers: ["cmd" as KeyModifier], key: "r" as KeyEquivalent };
+
+  // Format shortcut for display
+  const formatShortcut = (shortcut: { modifiers: KeyModifier[]; key: KeyEquivalent }): string => {
+    const modifierStr = shortcut.modifiers
+      .map((mod) => (mod === "cmd" ? "Cmd" : mod.charAt(0).toUpperCase() + mod.slice(1)))
+      .join("+");
+    return modifierStr ? `${modifierStr}+${String(shortcut.key).toUpperCase()}` : String(shortcut.key).toUpperCase();
+  };
+
+  // Custom search filtering
+  const filterSnippets = (snippets: HeavyDutySnippet[], query: string): HeavyDutySnippet[] => {
+    if (!query.trim()) return snippets;
+
+    const queryLower = query.toLowerCase();
+    const queryWords = queryLower.split(/\s+/).filter((word) => word.length > 0);
+
+    return snippets.filter((snippet) => {
+      // Check filename and folder
+      const nameMatch = snippet.name.toLowerCase().includes(queryLower);
+      const folderMatch = snippet.folder.toLowerCase().includes(queryLower);
+
+      // Check search content with partial matching
+      const contentMatch = queryWords.every((word) => {
+        return snippet.searchContent.includes(word);
+      });
+      return nameMatch || folderMatch || contentMatch;
+    });
+  };
 
   // Lazy preview loading (uses LRU cache)
   const loadPreview = async (snippet: HeavyDutySnippet) => {
@@ -28,12 +71,15 @@ export default function Command() {
     try {
       const preferences = await getPreferenceValues();
       const path = preferences["folderPath"];
+      const searchIndexLines = parseInt(preferences["searchIndexLines"] || "3");
+      const supportedExtensionsStr = preferences["supportedExtensions"] || "md,txt,yaml,yml,json,sh";
+      const supportedExtensions = supportedExtensionsStr.split(",").map((ext: string) => "." + ext.trim());
       const allPathsTmp = preferences["secondaryFolderPaths"]
         ? [path, ...preferences["secondaryFolderPaths"].split(",")]
         : [path];
       const allPaths = Array.from(new Set(allPathsTmp.map(expandHomeDirectory)));
 
-      const snippetsPromises = allPaths.map(discoverAllSnippets);
+      const snippetsPromises = allPaths.map((path) => discoverAllSnippets(path, searchIndexLines, supportedExtensions));
       const snippetsArrays = await Promise.all(snippetsPromises);
       const heavyDutySnippets = snippetsArrays.flatMap(({ snippets }) => snippets);
       const errors = snippetsArrays.flatMap(({ errors }) => errors);
@@ -47,8 +93,21 @@ export default function Command() {
         )
       );
 
-      // Sort by modification time (newest first)
-      const orderedSnippets = heavyDutySnippets.sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime());
+      // Create priority map for extensions
+      const extensionPriority: { [key: string]: number } = {};
+      supportedExtensions.forEach((ext: string, index: number) => {
+        extensionPriority[ext] = index;
+      });
+
+      // Sort by extension priority (lower number first), then by modification time (newest first)
+      const orderedSnippets = heavyDutySnippets.sort((a, b) => {
+        const extA = pathMod.extname(a.fullPath);
+        const extB = pathMod.extname(b.fullPath);
+        const priA = extensionPriority[extA] ?? 999;
+        const priB = extensionPriority[extB] ?? 999;
+        if (priA !== priB) return priA - priB;
+        return b.modifiedTime.getTime() - a.modifiedTime.getTime();
+      });
 
       setState((previous) => ({
         ...previous,
@@ -58,6 +117,15 @@ export default function Command() {
         paths: allPaths,
         errors: errors,
       }));
+
+      // Show success toast if no errors
+      if (errors.length === 0) {
+        showToast({
+          style: Toast.Style.Success,
+          title: "Snippets reloaded",
+          message: `Loaded ${heavyDutySnippets.length} snippets`,
+        });
+      }
     } catch (err) {
       setState((previous) => ({
         ...previous,
@@ -83,25 +151,27 @@ export default function Command() {
     fetchData();
   }, []);
 
-  // Handle filter folder (HeavyDutySnippet version)
+  // Handle filter folder and search (HeavyDutySnippet version)
   useEffect(() => {
-    if (state.selectedFilter && state.selectedFilter != "all") {
-      if (state.heavyDutySnippets) {
-        let filtered: HeavyDutySnippet[] = [];
+    if (state.heavyDutySnippets) {
+      let filtered: HeavyDutySnippet[] = state.heavyDutySnippets;
 
+      // Apply folder filter
+      if (state.selectedFilter && state.selectedFilter != "all") {
         if (state.selectedFilter.startsWith("folder:")) {
           const filterValue = state.selectedFilter.substring("folder:".length);
-          filtered = state.heavyDutySnippets.filter((snippet) => snippet.folder === filterValue);
+          filtered = filtered.filter((snippet) => snippet.folder === filterValue);
         }
         // Note: Tag filtering not available in discovery mode
         // Tags would need to be loaded on-demand for full filtering
-
-        setState((previous) => ({ ...previous, filteredHeavyDutySnippets: filtered }));
       }
-    } else {
-      setState((previous) => ({ ...previous, filteredHeavyDutySnippets: state.heavyDutySnippets }));
+
+      // Apply custom search filter
+      filtered = filterSnippets(filtered, searchText);
+
+      setState((previous) => ({ ...previous, filteredHeavyDutySnippets: filtered }));
     }
-  }, [state.selectedFilter, state.heavyDutySnippets]);
+  }, [state.selectedFilter, state.heavyDutySnippets, searchText]);
 
   if (state.errors && state.errors.length != 0) {
     const options: Toast.Options = {
@@ -118,6 +188,7 @@ export default function Command() {
       searchBarPlaceholder="Type to search snippets"
       isLoading={state.isLoading}
       isShowingDetail={loadSnippetsView}
+      onSearchTextChange={setSearchText}
       onSelectionChange={(id) => {
         if (id && state.filteredHeavyDutySnippets) {
           const snippet = state.filteredHeavyDutySnippets.find((s) => s.id === id);
@@ -150,16 +221,16 @@ export default function Command() {
         <List.EmptyView
           icon={Icon.Snippets}
           title="No Snippets."
-          description="Why not create a few?
-
-            Visit https://www.raycast.com/astronight/snippetsurfer for examples."
+          description={`Try Enter or open Actions then hit ${formatShortcut(
+            reloadShortcut
+          )} to reload snippets from disk`}
           actions={
             <ActionPanel>
               <Action
                 title="Reload Snippets"
                 icon={Icon.RotateAntiClockwise}
                 onAction={fetchData}
-                shortcut={{ modifiers: ["cmd"], key: "r" }}
+                shortcut={reloadShortcut}
               />
             </ActionPanel>
           }
@@ -183,7 +254,6 @@ export default function Command() {
                 { icon: Icon.Folder, text: i.folder && i.folder !== "." ? i.folder : "" },
                 { text: formatFileSize(i.fileSize) },
               ]}
-              keywords={[i.folder, i.name]}
               icon={Icon.Document}
               detail={<SnippetPreview snippet={i} preview={currentPreview} />}
               actions={
@@ -216,7 +286,7 @@ const SnippetPreview = ({ snippet, preview }: { snippet: HeavyDutySnippet; previ
   const homeDir = os.homedir();
   const displayPath = snippet.fullPath.replace(homeDir, "~");
 
-  const content = preview || "Loading preview...";
+  const content = preview || "⏳ Loading preview...";
 
   // Calculate line count for preview
   const previewLines = content === "Loading preview..." ? 0 : content.split("\n").length;

@@ -27,18 +27,18 @@
       "description": "Select the primary folder where snippets are located.",
       "type": "directory",
       "required": true,
-      "title": "Select Primary Snippet Folder"
+      "title": "Primary Snippet Folder (required)"
     },
     {
       "name": "secondaryFolderPaths",
-      "description": "Comma separated list of additional paths where snippets are located.\nExample: ~/Desktop/snippets,~/Documents/othersnippets",
+      "description": "Comma separated list of additional paths where snippets are located. Example: ~/Desktop/snippets,~/Documents/othersnippets",
       "type": "textfield",
       "required": false,
-      "title": "Select Secondary Snippet Folders"
+      "title": "Secondary Snippet Folders (comma-separated, optional)"
     },
     {
       "name": "primaryAction",
-      "description": "Primary action.",
+      "description": "Choose the default action when selecting a snippet: copy to clipboard or paste directly to the active app.",
       "type": "dropdown",
       "required": false,
       "data": [
@@ -47,15 +47,27 @@
           "value": "copyAndPaste"
         },
         {
-          "title": "Copy to clipboard (Alt)",
-          "value": "copyClipboard"
-        },
-        {
           "title": "Paste to Active App",
           "value": "pasteToActiveApp"
         }
       ],
-      "title": "Select primary action"
+      "title": "Primary Action (copy, paste, or both)"
+    },
+    {
+      "name": "searchIndexLines",
+      "description": "Number of lines from the beginning of each file to index for search (1-50).",
+      "type": "textfield",
+      "required": false,
+      "default": "3",
+      "title": "Lines to Index for Search (1-50, default 3)"
+    },
+    {
+      "name": "supportedExtensions",
+      "description": "Comma-separated list of file extensions to scan for snippets (without dots). IMPORTANT: The order determines search result priority - extensions listed first will appear higher in search results.",
+      "type": "textfield",
+      "required": false,
+      "default": "md,txt,yaml,yml,json,sh",
+      "title": "File Extensions (order affects search priority)"
     }
   ],
   "dependencies": {

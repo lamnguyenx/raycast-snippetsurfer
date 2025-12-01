@@ -21,6 +21,7 @@ export interface HeavyDutySnippet {
   fullPath: string; // absolute path for lazy loading
   fileSize: number; // bytes, for UI indicators and limits
   modifiedTime: Date; // for sorting and change detection
+  searchContent: string; // first 3 lines for custom search
 }
 
 export interface State {

@@ -1,6 +1,16 @@
 import { spawn } from "child_process";
 import { getPastableContent } from "../utils/SnippetsLoader";
-import { Action, ActionPanel, Icon, popToRoot, closeMainWindow, showToast, Toast } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Icon,
+  popToRoot,
+  closeMainWindow,
+  showToast,
+  Toast,
+  Clipboard,
+  openExtensionPreferences,
+} from "@raycast/api";
 import type { Snippet, HeavyDutySnippet } from "../types";
 import * as path from "path";
 
@@ -211,24 +221,61 @@ const HeavyDutyActionPanel = ({
   };
 
   const actions = [
-    <Action.CopyToClipboard title="Copy Real File Path" content={snippet.fullPath} key="copyFilePath" />,
     <Action title="Copy to Clipboard" icon={Icon.Clipboard} key="copyAndPaste" onAction={copyAndPaste} />,
-    <Action title="Copy to Clipboard (Alt)" icon={Icon.Clipboard} key="copy" onAction={copyToClipboard} />,
+    <Action
+      title="Copy Real File Path"
+      icon={Icon.Link}
+      key="copyFilePath"
+      onAction={async () => {
+        await Clipboard.copy(snippet.fullPath);
+
+        // Show macOS dialog notification (auto-dismiss after 2 seconds)
+        if (process.platform === "darwin") {
+          try {
+            const dialogScript = `display dialog "📄 File Path Copied\\n${snippet.fullPath}" with title "Path Copied!" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
+
+            const dialogProcess = spawn("osascript", ["-e", dialogScript]);
+
+            // Don't wait for completion - let it run in background
+            dialogProcess.on("error", (error) => {
+              // Fallback to Raycast toast if dialog fails
+              showToast({
+                style: Toast.Style.Success,
+                title: "File path copied to clipboard",
+                message: snippet.fullPath,
+              });
+            });
+          } catch (error) {
+            // Fallback to Raycast toast
+            showToast({
+              style: Toast.Style.Success,
+              title: "File path copied to clipboard",
+              message: snippet.fullPath,
+            });
+          }
+        } else {
+          // Non-macOS platforms use Raycast toast
+          showToast({
+            style: Toast.Style.Success,
+            title: "File path copied to clipboard",
+            message: snippet.fullPath,
+          });
+        }
+
+        // Brief pause to let notification appear
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }}
+    />,
     <Action title="Paste to Active App" icon={Icon.ArrowRight} key="paste" onAction={pasteToActiveApp} />,
   ];
 
   let reorderedActions = actions;
-  if (primaryAction === "copyAndPaste") {
-    // Keep Copy Real File Path first, then make copyAndPaste second
-    reorderedActions = [
-      actions[0], // Copy Real File Path
-      actions[1], // copyAndPaste
-      actions[2], // copy
-      actions[3], // paste
-    ];
-  } else if (primaryAction && primaryAction !== "copyClipboard") {
-    // Keep Copy Real File Path first, then paste, copy, copyAndPaste
-    reorderedActions = [actions[0], actions[3], actions[2], actions[1]]; // filePath, paste, copy, copyAndPaste
+  if (primaryAction === "copyFilePath") {
+    // Make Copy Real File Path first
+    reorderedActions = [actions[1], actions[0], actions[2]];
+  } else if (primaryAction === "pasteToActiveApp") {
+    // Make Paste to Active App first
+    reorderedActions = [actions[2], actions[0], actions[1]];
   }
 
   return (
@@ -242,6 +289,7 @@ const HeavyDutyActionPanel = ({
           shortcut={{ modifiers: ["cmd"], key: "r" }}
         />
         <Action.OpenWith title="Open File" path={snippet.fullPath} shortcut={{ modifiers: ["cmd"], key: "o" }} />
+        <Action title="Open Extension Settings" icon={Icon.Gear} onAction={openExtensionPreferences} />
         {paths && paths.length !== 0 && (
           <>
             <Action.OpenWith

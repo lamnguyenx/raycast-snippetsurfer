@@ -7,9 +7,11 @@ import type { Snippet, HeavyDutySnippet } from "../types";
 import loadMarkdown from "./loaders/MarkdownLoader";
 import loadYaml from "./loaders/YamlLoader";
 
-const supportedExtensions = [".md", ".txt", ".yaml", ".yml"];
 const previewCache = new LRUCache<string>(50); // Cache up to 50 previews
-async function loadAllSnippets(startPath: string): Promise<{ snippets: Snippet[]; errors: Error[] }> {
+async function loadAllSnippets(
+  startPath: string,
+  supportedExtensions: string[] = [".md", ".txt", ".yaml", ".yml"]
+): Promise<{ snippets: Snippet[]; errors: Error[] }> {
   const snippets: Snippet[] = [];
   const errors: Error[] = [];
 
@@ -44,7 +46,7 @@ async function loadAllSnippets(startPath: string): Promise<{ snippets: Snippet[]
   }
 
   async function processFile(fullPath: string, relativePath: string, extension: string): Promise<void> {
-    if ([".yml", ".yaml"].includes(extension)) {
+    if ([".yml", ".yaml", ".json"].includes(extension)) {
       const res = await loadYaml(relativePath, fullPath);
       snippets.push(...res.snippets);
       errors.push(...res.errors);
@@ -84,7 +86,11 @@ function getPastableContent(content: string): string {
 }
 
 // HeavyDutySnippet: Discovery-only loading (zero memory for content)
-async function discoverAllSnippets(startPath: string): Promise<{ snippets: HeavyDutySnippet[]; errors: Error[] }> {
+async function discoverAllSnippets(
+  startPath: string,
+  searchIndexLines = 3,
+  supportedExtensions: string[] = [".md", ".txt", ".yaml", ".yml"]
+): Promise<{ snippets: HeavyDutySnippet[]; errors: Error[] }> {
   const snippets: HeavyDutySnippet[] = [];
   const errors: Error[] = [];
 
@@ -126,7 +132,49 @@ async function discoverAllSnippets(startPath: string): Promise<{ snippets: Heavy
     try {
       const stats = await fs.promises.stat(fullPath);
 
-      // Create HeavyDutySnippet with metadata only
+      // Read first 5 lines for search content
+      let searchContent = "";
+      try {
+        const stream = fs.createReadStream(fullPath, {
+          encoding: "utf8",
+          start: 0,
+          end: 2048, // Read up to 2KB to ensure we get first few lines
+        });
+
+        let content = "";
+        for await (const chunk of stream) {
+          content += chunk;
+        }
+
+        // Extract meaningful search terms from first few lines
+        const lines = content.split("\n").slice(0, searchIndexLines); // Configurable number of lines
+        const cleanLines = lines
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith("---"));
+
+        // Extract words and short phrases for better search matching
+        const allWords = content
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(
+            (word) =>
+              word.length > 2 && // Skip very short words
+              !word.startsWith("---") &&
+              !/^\d+$/.test(word) // Skip pure numbers
+          )
+          .slice(0, 20); // Limit to 20 meaningful words
+
+        // Add file name variants for search
+        const fileName = path.parse(fullPath).name;
+        const processedFileName = fileName.replace(/[_-]/g, " ").toLowerCase();
+
+        searchContent = [...cleanLines, ...allWords, fileName.toLowerCase(), processedFileName].join(" ").toLowerCase();
+      } catch (readError) {
+        // If we can't read the file, use empty search content
+        searchContent = "";
+      }
+
+      // Create HeavyDutySnippet with metadata and search content
       const hash = crypto.createHash("md5");
       hash.update(fullPath);
       const id = hash.digest("hex");
@@ -138,6 +186,7 @@ async function discoverAllSnippets(startPath: string): Promise<{ snippets: Heavy
         fullPath: fullPath,
         fileSize: stats.size,
         modifiedTime: stats.mtime,
+        searchContent: searchContent,
       };
 
       snippets.push(snippet);
