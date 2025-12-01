@@ -211,6 +211,7 @@ const HeavyDutyActionPanel = ({
   };
 
   const actions = [
+    <Action.CopyToClipboard title="Copy Real File Path" content={snippet.fullPath} key="copyFilePath" />,
     <Action title="Copy to Clipboard" icon={Icon.Clipboard} key="copyAndPaste" onAction={copyAndPaste} />,
     <Action title="Copy to Clipboard (Alt)" icon={Icon.Clipboard} key="copy" onAction={copyToClipboard} />,
     <Action title="Paste to Active App" icon={Icon.ArrowRight} key="paste" onAction={pasteToActiveApp} />,
@@ -218,13 +219,16 @@ const HeavyDutyActionPanel = ({
 
   let reorderedActions = actions;
   if (primaryAction === "copyAndPaste") {
-    // Make copyAndPaste the first action
+    // Keep Copy Real File Path first, then make copyAndPaste second
     reorderedActions = [
-      actions[0], // copyAndPaste
-      ...actions.slice(1),
+      actions[0], // Copy Real File Path
+      actions[1], // copyAndPaste
+      actions[2], // copy
+      actions[3], // paste
     ];
   } else if (primaryAction && primaryAction !== "copyClipboard") {
-    reorderedActions = [actions[1], actions[2], actions[0]]; // paste, copy, copyAndPaste
+    // Keep Copy Real File Path first, then paste, copy, copyAndPaste
+    reorderedActions = [actions[0], actions[3], actions[2], actions[1]]; // filePath, paste, copy, copyAndPaste
   }
 
   return (
