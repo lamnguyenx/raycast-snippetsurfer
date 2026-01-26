@@ -3,16 +3,20 @@ import { getPreferenceValues } from "@raycast/api";
 
 export default function Command() {
   const preferences = getPreferenceValues<{
-    folderPath: string;
+    workFolderPath?: string;
+    folderPath?: string;
     primaryAction?: string;
     searchIndexLines?: string;
     supportedExtensions: string;
   }>();
 
+  // Fallback to primary folder if work folder not set
+  const folderPath = preferences.workFolderPath || preferences.folderPath || "~";
+
   return (
     <SnippetSearch
-      locationName="Primary"
-      folderPath={preferences.folderPath}
+      locationName="Work"
+      folderPath={folderPath}
       primaryAction={preferences.primaryAction}
       searchIndexLines={parseInt(preferences.searchIndexLines || "3")}
       supportedExtensions={preferences.supportedExtensions}

@@ -15,10 +15,24 @@
   "commands": [
     {
       "name": "search-snippets",
-      "title": "Search Snippets",
-      "description": "Search snippets across your folder.",
+      "title": "Search Snippets (Primary)",
+      "description": "Search snippets from primary folder",
       "mode": "view",
       "hotkey": "shift+space"
+    },
+    {
+      "name": "search-work-snippets",
+      "title": "Work Snippets",
+      "description": "Search work-related snippets",
+      "mode": "view",
+      "hotkey": "shift+1"
+    },
+    {
+      "name": "search-personal-snippets",
+      "title": "Personal Snippets",
+      "description": "Search personal snippets",
+      "mode": "view",
+      "hotkey": "shift+2"
     }
   ],
   "preferences": [
@@ -30,11 +44,18 @@
       "title": "Primary Snippet Folder (required)"
     },
     {
-      "name": "secondaryFolderPaths",
-      "description": "Comma separated list of additional paths where snippets are located. Example: ~/Desktop/snippets,~/Documents/othersnippets",
-      "type": "textfield",
+      "name": "workFolderPath",
+      "description": "Select folder for work-related snippets",
+      "type": "directory",
       "required": false,
-      "title": "Secondary Snippet Folders (comma-separated, optional)"
+      "title": "Work Snippet Folder (optional)"
+    },
+    {
+      "name": "personalFolderPath",
+      "description": "Select folder for personal snippets",
+      "type": "directory",
+      "required": false,
+      "title": "Personal Snippet Folder (optional)"
     },
     {
       "name": "primaryAction",
