@@ -3,20 +3,20 @@ import { getPreferenceValues } from "@raycast/api";
 
 export default function Command() {
   const preferences = getPreferenceValues<{
-    workFolderPath?: string;
-    folderPath?: string;
+    miniFolderPath?: string;
+    mainFolderPath?: string;
     primaryAction?: string;
     searchIndexLines?: string;
     supportedExtensions: string;
   }>();
 
-  // Fallback to primary folder if work folder not set
-  const folderPath = preferences.workFolderPath || preferences.folderPath || "~";
+  // Set default path for mini snippets if not configured
+  const mainFolderPath = preferences.miniFolderPath || "~/.snippets-mini";
 
   return (
     <SnippetSearch
-      locationName="Work"
-      folderPath={folderPath}
+      locationName="Mini"
+      mainFolderPath={mainFolderPath}
       primaryAction={preferences.primaryAction}
       searchIndexLines={parseInt(preferences.searchIndexLines || "3")}
       supportedExtensions={preferences.supportedExtensions}

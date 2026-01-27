@@ -15,47 +15,44 @@
   "commands": [
     {
       "name": "search-snippets",
-      "title": "Search Snippets (Primary)",
-      "description": "Search snippets from primary folder",
-      "mode": "view",
-      "hotkey": "shift+space"
+      "title": "Search Snippets",
+      "description": "Search and use snippets from your snippet folders",
+      "mode": "view"
     },
     {
       "name": "search-work-snippets",
-      "title": "Work Snippets",
-      "description": "Search work-related snippets",
-      "mode": "view",
-      "hotkey": "shift+1"
+      "title": "Mini Snippets",
+      "description": "Search and use mini, quick snippets with keyboard typing (no clipboard)",
+      "mode": "view"
     },
     {
       "name": "search-personal-snippets",
-      "title": "Personal Snippets",
-      "description": "Search personal snippets",
-      "mode": "view",
-      "hotkey": "shift+2"
+      "title": "Other Snippets",
+      "description": "Search and use snippets from other folders",
+      "mode": "view"
     }
   ],
   "preferences": [
     {
-      "name": "folderPath",
+      "name": "mainFolderPath",
       "description": "Select the primary folder where snippets are located.",
       "type": "directory",
       "required": true,
       "title": "Primary Snippet Folder (required)"
     },
     {
-      "name": "workFolderPath",
-      "description": "Select folder for work-related snippets",
+      "name": "miniFolderPath",
+      "description": "Select folder for mini snippets (keywords, shortcodes)",
       "type": "directory",
       "required": false,
-      "title": "Work Snippet Folder (optional)"
+      "title": "Mini Snippet Folder (optional)"
     },
     {
-      "name": "personalFolderPath",
-      "description": "Select folder for personal snippets",
+      "name": "otherFolderPath",
+      "description": "Select folder for other snippets",
       "type": "directory",
       "required": false,
-      "title": "Personal Snippet Folder (optional)"
+      "title": "Other Snippet Folder (optional)"
     },
     {
       "name": "primaryAction",
@@ -70,6 +67,10 @@
         {
           "title": "Paste to Active App",
           "value": "pasteToActiveApp"
+        },
+        {
+          "title": "Type to Active App",
+          "value": "typeToActiveApp"
         }
       ],
       "title": "Primary Action (copy, paste, or both)"

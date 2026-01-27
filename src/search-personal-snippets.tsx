@@ -3,20 +3,20 @@ import { getPreferenceValues } from "@raycast/api";
 
 export default function Command() {
   const preferences = getPreferenceValues<{
-    personalFolderPath?: string;
-    folderPath?: string;
+    otherFolderPath?: string;
+    mainFolderPath?: string;
     primaryAction?: string;
     searchIndexLines?: string;
     supportedExtensions: string;
   }>();
 
-  // Fallback to primary folder if personal folder not set
-  const folderPath = preferences.personalFolderPath || preferences.folderPath || "~";
+  // Set default path for other snippets if not configured
+  const mainFolderPath = preferences.otherFolderPath || "~/.snippets-other";
 
   return (
     <SnippetSearch
       locationName="Personal"
-      folderPath={folderPath}
+      mainFolderPath={mainFolderPath}
       primaryAction={preferences.primaryAction}
       searchIndexLines={parseInt(preferences.searchIndexLines || "3")}
       supportedExtensions={preferences.supportedExtensions}

@@ -1,9 +1,20 @@
-import { Icon, List, showToast, Toast, ActionPanel, Action, type KeyModifier, type KeyEquivalent } from "@raycast/api";
+import {
+  Icon,
+  List,
+  showToast,
+  Toast,
+  ActionPanel,
+  Action,
+  type KeyModifier,
+  type KeyEquivalent,
+  closeMainWindow,
+} from "@raycast/api";
 
 import { useEffect, useState } from "react";
 import { expandHomeDirectory, discoverAllSnippets, loadSnippetPreview } from "../utils/SnippetsLoader";
 import type { State, HeavyDutySnippet } from "../types";
 import { HeavyDutyActionPanel } from "../components/CustomActionPanel";
+import * as fs from "fs";
 import * as pathMod from "path";
 import * as os from "os";
 
@@ -85,7 +96,7 @@ ${content}
 // Main reusable SnippetSearch component
 interface SnippetSearchProps {
   locationName: string;
-  folderPath: string;
+  mainFolderPath: string;
   primaryAction?: string;
   searchIndexLines?: number;
   supportedExtensions?: string;
@@ -94,7 +105,7 @@ interface SnippetSearchProps {
 
 export default function SnippetSearch({
   locationName,
-  folderPath,
+  mainFolderPath,
   primaryAction = "copyAndPaste",
   searchIndexLines = 3,
   supportedExtensions = "md,txt,yaml,yml,json,sh",
@@ -107,20 +118,176 @@ export default function SnippetSearch({
   // Reload shortcut
   const reloadShortcut = { modifiers: ["cmd" as KeyModifier], key: "r" as KeyEquivalent };
 
+  // Auto-select first action on Enter for Mini mode
+  const handleQuickAction = async (snippet: HeavyDutySnippet) => {
+    if (locationName.toLowerCase() === "mini") {
+      // Simulate typing behavior on Enter
+      const { spawn } = await import("child_process");
+
+      try {
+        const content = await new Promise<string>((resolve, reject) => {
+          const child = spawn("cat", [snippet.fullPath]);
+          let data = "";
+          child.stdout.on("data", (chunk: Buffer) => {
+            data += chunk.toString();
+          });
+          child.on("close", () => {
+            resolve(data);
+          });
+          child.on("error", reject);
+        });
+
+        // Escape quotes properly for AppleScript
+        const escapedContent = content.replace(/"/g, '"');
+
+        // Build a self-contained AppleScript for typing only
+        // Window will close via closeMainWindow() API
+        // This runs independently and continues after window closes
+        const appleScript = `
+          tell application "System Events"
+            delay 0.5
+            keystroke "${escapedContent}"
+            delay 0.1
+          end tell
+        `;
+
+        // Run typing script in background - will continue after window closes
+        spawn("osascript", ["-e", appleScript]);
+
+        // Show macOS dialog notification (auto-dismiss after 2 seconds)
+        console.log(`[DEBUG] handleQuickAction - platform: ${process.platform}, attempting dialog`);
+        if (process.platform === "darwin") {
+          console.log(`[DEBUG] Spawning macOS dialog for typing`);
+          try {
+            // Use macOS dialog that auto-dismisses after 2 seconds
+            // Escape newlines and quotes in file paths for AppleScript
+            const escapedName = snippet.name.replace(/"/g, '"');
+            const escapedPath = snippet.fullPath.replace(/"/g, '"');
+            const dialogScript = `display dialog "${escapedName}" & return & "File: ${escapedPath}" with title "Snippet Typed!" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
+            console.log(`[DEBUG] AppleScript: ${dialogScript}`);
+
+            const dialogProcess = spawn("osascript", ["-e", dialogScript]);
+            console.log(`[DEBUG] Dialog process spawned with PID: ${dialogProcess.pid || "unknown"}`);
+
+            // Don't wait for completion - let it run in background
+            dialogProcess.on("error", (error) => {
+              console.log(`[DEBUG] Dialog process error: ${JSON.stringify(error)}`);
+              // Fallback to Raycast toast if dialog fails
+              showToast({
+                style: Toast.Style.Success,
+                title: "Snippet Typed!",
+                message: `${snippet.name} - Content typed automatically`,
+              });
+            });
+          } catch (error) {
+            console.log(`[DEBUG] Exception spawning dialog: ${JSON.stringify(error)}`);
+            // Fallback to Raycast toast
+            showToast({
+              style: Toast.Style.Success,
+              title: "Snippet Typed!",
+              message: `${snippet.name} - Content typed automatically`,
+            });
+          }
+        } else {
+          // Non-macOS platforms use Raycast toast
+          console.log(`[DEBUG] Using Raycast toast (not darwin platform)`);
+          showToast({
+            style: Toast.Style.Success,
+            title: "Snippet Typed!",
+            message: `${snippet.name} - Content typed automatically`,
+          });
+        }
+
+        // Brief pause to let notification appear
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Schedule window close in background
+        closeMainWindow();
+      } catch (error) {
+        console.error("Error typing snippet:", error);
+
+        // Show error notification with fallback
+        if (process.platform === "darwin") {
+          try {
+            // Use macOS dialog for error (auto-dismiss after 2 seconds)
+            const errorDialogScript = `display dialog "${
+              error instanceof Error ? error.message : "Unknown error"
+            }" with title "Snippet Typing Failed" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
+
+            const errorDialogProcess = spawn("osascript", ["-e", errorDialogScript]);
+
+            errorDialogProcess.on("error", (dialogError) => {
+              // Fallback to Raycast toast
+              showToast({
+                style: Toast.Style.Failure,
+                title: "Failed to type snippet",
+                message: error instanceof Error ? error.message : "Unknown error",
+              });
+            });
+          } catch (fallbackError) {
+            // Fallback to Raycast toast
+            showToast({
+              style: Toast.Style.Failure,
+              title: "Failed to type snippet",
+              message: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        } else {
+          // Non-macOS platforms use Raycast toast
+          showToast({
+            style: Toast.Style.Failure,
+            title: "Failed to type snippet",
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+    }
+  };
+
+  // Modified to handle quick action on Enter for Mini mode
+  const onQuickAction = (snippet: HeavyDutySnippet) => {
+    loadPreview(snippet, setCurrentPreview);
+    if (locationName.toLowerCase() === "mini") {
+      handleQuickAction(snippet);
+    }
+  };
+
   // Initial data fetch
   const fetchData = async () => {
     try {
       // Handle empty folder path
-      if (!folderPath || folderPath.trim() === "") {
+      if (!mainFolderPath || mainFolderPath.trim() === "") {
         setState((previous) => ({ ...previous, errors: [new Error("No folder path specified")] }));
         setState((previous) => ({ ...previous, isLoading: false }));
         return;
       }
 
-      const expandedPath = expandHomeDirectory(folderPath);
+      const expandedPath = expandHomeDirectory(mainFolderPath);
+
+      // Check if folder exists
+      try {
+        await fs.promises.access(expandedPath);
+      } catch (accessError) {
+        const errorMsg = expandedPath.endsWith("/")
+          ? `Folder does not exist: ${expandedPath}`
+          : `Default ${locationName} folder does not exist at ${expandedPath}`;
+        setState((previous) => ({ ...previous, errors: [new Error(errorMsg)] }));
+        setState((previous) => ({ ...previous, isLoading: false }));
+        return;
+      }
+
       const extensions = supportedExtensions.split(",").map((ext: string) => "." + ext.trim());
 
       const { snippets, errors } = await discoverAllSnippets(expandedPath, searchIndexLines, extensions);
+
+      // Handle empty folder
+      if (snippets.length === 0) {
+        showToast({
+          style: Toast.Style.Failure,
+          title: `No snippets found`,
+          message: `The ${locationName} folder is empty or contains no supported files`,
+        });
+      }
 
       const folders = Array.from(new Set(snippets.map((i) => i.folder)));
 
@@ -148,8 +315,8 @@ export default function SnippetSearch({
         errors: errors,
       }));
 
-      // Show success toast if no errors
-      if (errors.length === 0) {
+      // Show success toast if no errors and snippets exist
+      if (errors.length === 0 && snippets.length > 0) {
         showToast({
           style: Toast.Style.Success,
           title: `Snippets reloaded in ${locationName}`,
@@ -169,7 +336,7 @@ export default function SnippetSearch({
   // Initial fetch
   useEffect(() => {
     fetchData();
-  }, [folderPath, searchIndexLines, supportedExtensions]);
+  }, [mainFolderPath, searchIndexLines, supportedExtensions]);
 
   // Handle filter folder and search
   useEffect(() => {
@@ -286,7 +453,8 @@ export default function SnippetSearch({
                   snippet={i}
                   primaryAction={primaryAction}
                   reloadSnippets={fetchData}
-                  paths={[folderPath]}
+                  paths={[mainFolderPath]}
+                  locationType={locationName.toLowerCase()}
                 />
               }
             ></List.Item>

@@ -3,7 +3,7 @@ import { getPreferenceValues } from "@raycast/api";
 
 export default function Command() {
   const preferences = getPreferenceValues<{
-    folderPath: string;
+    mainFolderPath: string;
     primaryAction?: string;
     searchIndexLines?: string;
     supportedExtensions: string;
@@ -12,7 +12,7 @@ export default function Command() {
   return (
     <SnippetSearch
       locationName="Primary"
-      folderPath={preferences.folderPath}
+      mainFolderPath={preferences.mainFolderPath}
       primaryAction={preferences.primaryAction}
       searchIndexLines={parseInt(preferences.searchIndexLines || "3")}
       supportedExtensions={preferences.supportedExtensions}
