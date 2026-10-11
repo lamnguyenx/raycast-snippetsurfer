@@ -8,6 +8,7 @@ export default function Command() {
     primaryAction?: string;
     searchIndexLines?: string;
     supportedExtensions: string;
+    enableTemplates?: boolean;
   }>();
 
   // Set default path for mini snippets if not configured
@@ -20,6 +21,7 @@ export default function Command() {
       primaryAction={preferences.primaryAction}
       searchIndexLines={parseInt(preferences.searchIndexLines || "3")}
       supportedExtensions={preferences.supportedExtensions}
+      enableTemplates={preferences.enableTemplates ?? true}
     />
   );
 }

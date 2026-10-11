@@ -1,19 +1,20 @@
 import { spawn } from "child_process";
-import * as fs from "fs";
-import { getPastableContent } from "../utils/SnippetsLoader";
+import { readSnippetContent, getPastableContent } from "../utils/SnippetsLoader";
+import { expandTemplate, findTemplatePrompts } from "../utils/TemplateExpander";
 import {
   Action,
   ActionPanel,
   Icon,
-  popToRoot,
   closeMainWindow,
   showToast,
   Toast,
   Clipboard,
   openExtensionPreferences,
+  useNavigation,
 } from "@raycast/api";
 import type { Snippet, HeavyDutySnippet } from "../types";
 import * as path from "path";
+import TemplateArgumentForm from "./TemplateArgumentForm";
 
 const CustomActionPanel = ({
   handleAction,
@@ -85,177 +86,114 @@ const HeavyDutyActionPanel = ({
   reloadSnippets,
   paths,
   locationType,
+  enableTemplates = true,
 }: {
   snippet: HeavyDutySnippet;
   primaryAction: string;
   reloadSnippets: () => void;
   paths: string[];
   locationType?: string;
+  enableTemplates?: boolean;
 }) => {
-  const copyToClipboard = async () => {
-    const command = process.platform === "darwin" ? "pbcopy" : "xclip -selection clipboard";
+  const { push } = useNavigation();
 
-    return new Promise<void>((resolve, reject) => {
-      const child = spawn("sh", ["-c", `cat "${snippet.fullPath}" | ${command}`]);
-      child.on("close", (code: number) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`Copy failed with code ${code}`));
-        }
-      });
-      child.on("error", reject);
-    });
+  // Run an action against the snippet content after expanding dynamic tokens.
+  // If the content contains {{ask:...}} placeholders, prompt for them first.
+  const withContent = async (action: (content: string) => void | Promise<void>) => {
+    const raw = await readSnippetContent(snippet.fullPath);
+
+    if (!enableTemplates) {
+      await action(raw);
+      return;
+    }
+
+    const prompts = findTemplatePrompts(raw);
+    if (prompts.length === 0) {
+      await action(expandTemplate(raw));
+      return;
+    }
+
+    push(
+      <TemplateArgumentForm
+        prompts={prompts}
+        onSubmit={(values) => {
+          action(expandTemplate(raw, { values }));
+        }}
+      />
+    );
   };
 
-  const copyAndPaste = async () => {
-    const copyCommand = process.platform === "darwin" ? "pbcopy" : "xclip -selection clipboard";
-
+  // Show a macOS auto-dismissing dialog, falling back to a Raycast toast.
+  const notify = (dialogTitle: string, toastTitle: string, message: string) => {
+    if (process.platform !== "darwin") {
+      showToast({ style: Toast.Style.Success, title: toastTitle, message });
+      return;
+    }
     try {
-      // Copy to clipboard
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn("sh", ["-c", `cat "${snippet.fullPath}" | ${copyCommand}`]);
-        child.on("close", (code: number) => {
-          if (code === 0) resolve();
-          else reject(new Error(`Copy failed with code ${code}`));
-        });
-        child.on("error", (error) => {
-          reject(error);
-        });
+      const escapedName = snippet.name.replace(/"/g, '\\"');
+      const escapedPath = snippet.fullPath.replace(/"/g, '\\"');
+      const dialogScript = `display dialog "${escapedName}" & return & "File: ${escapedPath}" with title "${dialogTitle}" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
+      const dialogProcess = spawn("osascript", ["-e", dialogScript]);
+      dialogProcess.on("error", () => {
+        showToast({ style: Toast.Style.Success, title: toastTitle, message });
       });
-
-      // Show macOS dialog notification (auto-dismiss after 1 second)
-      console.log(`[DEBUG] copyAndPaste - platform: ${process.platform}, attempting dialog`);
-      if (process.platform === "darwin") {
-        console.log(`[DEBUG] Spawning macOS dialog for copy`);
-        try {
-          // Use macOS dialog that auto-dismisses after 2 seconds
-          // Escape newlines and quotes in file paths for AppleScript
-          const escapedName = snippet.name.replace(/"/g, '\\"');
-          const escapedPath = snippet.fullPath.replace(/"/g, '\\"');
-          const dialogScript = `display dialog "${escapedName}" & return & "File: ${escapedPath}" with title "Snippet Copied!" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
-          console.log(`[DEBUG] AppleScript: ${dialogScript}`);
-
-          const dialogProcess = spawn("osascript", ["-e", dialogScript]);
-          console.log(`[DEBUG] Dialog process spawned with PID: ${dialogProcess.pid || "unknown"}`);
-
-          // Don't wait for completion - let it run in background
-          dialogProcess.on("error", (error) => {
-            console.log(`[DEBUG] Dialog process error: ${JSON.stringify(error)}`);
-            // Fallback to Raycast toast if dialog fails
-            showToast({
-              style: Toast.Style.Success,
-              title: "Snippet Copied!",
-              message: `${snippet.name} - Press Cmd+V to paste`,
-            });
-          });
-        } catch (error) {
-          console.log(`[DEBUG] Exception spawning dialog: ${JSON.stringify(error)}`);
-          // Fallback to Raycast toast
-          showToast({
-            style: Toast.Style.Success,
-            title: "Snippet Copied!",
-            message: `${snippet.name} - Press Cmd+V to paste`,
-          });
-        }
-      } else {
-        // Non-macOS platforms use Raycast toast
-        console.log(`[DEBUG] Using Raycast toast (not darwin platform)`);
-        showToast({
-          style: Toast.Style.Success,
-          title: "Snippet Copied!",
-          message: `${snippet.name} - Press Cmd+V to paste`,
-        });
-      }
-
-      // Brief pause to let notification appear
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Close Raycast window after notification
-      closeMainWindow();
-    } catch (error) {
-      // Show error notification with fallback
-      if (process.platform === "darwin") {
-        try {
-          // Use macOS dialog for error (auto-dismiss after 2 seconds)
-          const errorDialogScript = `display dialog "${
-            error instanceof Error ? error.message : "Unknown error"
-          }" with title "Snippet Copy Failed" buttons {"OK (auto close in 4s)"} default button "OK (auto close in 4s)" giving up after 4`;
-
-          const errorDialogProcess = spawn("osascript", ["-e", errorDialogScript]);
-
-          errorDialogProcess.on("error", (dialogError) => {
-            // Fallback to Raycast toast
-            showToast({
-              style: Toast.Style.Failure,
-              title: "Failed to copy snippet",
-              message: error instanceof Error ? error.message : "Unknown error",
-            });
-          });
-        } catch (fallbackError) {
-          // Fallback to Raycast toast
-          showToast({
-            style: Toast.Style.Failure,
-            title: "Failed to copy snippet",
-            message: error instanceof Error ? error.message : "Unknown error",
-          });
-        }
-      } else {
-        // Non-macOS platforms use Raycast toast
-        showToast({
-          style: Toast.Style.Failure,
-          title: "Failed to copy snippet",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
+    } catch {
+      showToast({ style: Toast.Style.Success, title: toastTitle, message });
     }
   };
 
-  const pasteToActiveApp = async () => {
+  const notifyError = (dialogTitle: string, toastTitle: string, message: string) => {
+    if (process.platform !== "darwin") {
+      showToast({ style: Toast.Style.Failure, title: toastTitle, message });
+      return;
+    }
     try {
-      console.log(`[DEBUG] pasteToActiveApp called for: ${snippet.name}`);
-      console.log(`[DEBUG] locationType: ${locationType || "undefined"}`);
-      console.log(`[DEBUG] fullPath: ${snippet.fullPath}`);
-      console.log(`[DEBUG] fileSize: ${snippet.fileSize}`);
-      console.log(`[DEBUG] platform: ${process.platform}`);
-
-      // Read the snippet file content
-      const content = await new Promise<string>((resolve, reject) => {
-        console.log(`[DEBUG] Reading file: ${snippet.fullPath}`);
-        const child = spawn("cat", [snippet.fullPath]);
-        let data = "";
-        child.stdout.on("data", (chunk) => {
-          data += chunk.toString();
-        });
-        child.on("close", () => {
-          console.log(`[DEBUG] File read complete, content length: ${data.length}`);
-          resolve(data);
-        });
-        child.on("error", (err) => {
-          console.log(`[DEBUG] Error reading file: ${err.message}`);
-          reject(err);
-        });
+      const escapedMessage = message.replace(/"/g, '\\"');
+      const errorDialogScript = `display dialog "${escapedMessage}" with title "${dialogTitle}" buttons {"OK (auto close in 4s)"} default button "OK (auto close in 4s)" giving up after 4`;
+      const errorDialogProcess = spawn("osascript", ["-e", errorDialogScript]);
+      errorDialogProcess.on("error", () => {
+        showToast({ style: Toast.Style.Failure, title: toastTitle, message });
       });
+    } catch {
+      showToast({ style: Toast.Style.Failure, title: toastTitle, message });
+    }
+  };
 
-      // Copy to clipboard first
-      const copyCommand = process.platform === "darwin" ? "pbcopy" : "xclip -selection clipboard";
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn("sh", ["-c", `echo "${content.replace('"', '"')}" | ${copyCommand}`]);
-        child.on("close", (code: number) => {
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`Copy failed with code ${code}`));
-          }
-        });
-        child.on("error", reject);
-      });
+  const copyAndPaste = () =>
+    withContent(async (content) => {
+      try {
+        await Clipboard.copy(content);
+        notify("Snippet Copied!", "Snippet Copied!", `${snippet.name} - Press Cmd+V to paste`);
 
-      // Use AppleScript to paste - RUN IN BACKGROUND INDEPENDENT PROCESS
-      if (process.platform === "darwin") {
-        // Build a self-contained AppleScript that handles the delay and pasting
-        // Use 'System Events' to quickly close frontend window
-        const pasteScript = `
+        // Brief pause to let notification appear
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Close Raycast window after notification
+        closeMainWindow();
+      } catch (error) {
+        notifyError(
+          "Snippet Copy Failed",
+          "Failed to copy snippet",
+          error instanceof Error ? error.message : "Unknown error"
+        );
+      }
+    });
+
+  const copyRealFilePath = async () => {
+    await Clipboard.copy(snippet.fullPath);
+    notify("Path Copied!", "File path copied to clipboard", snippet.fullPath);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  };
+
+  const pasteToActiveApp = () =>
+    withContent(async (content) => {
+      try {
+        // Copy to clipboard first
+        await Clipboard.copy(content);
+
+        // Use AppleScript to paste - run in a background independent process
+        if (process.platform === "darwin") {
+          const pasteScript = `
           tell application "System Events"
             tell process "Raycast"
               keystroke "w" using {command down}
@@ -265,137 +203,66 @@ const HeavyDutyActionPanel = ({
             delay 0.1
           end tell
         `;
+          spawn("osascript", ["-e", pasteScript]);
+        }
 
-        // Run the script in background - it will continue after window closes
-        spawn("osascript", ["-e", pasteScript]);
-      }
-
-      // Only show dialog for snippets in primary folder
-      const isPrimaryFolder = !locationType || locationType === "search" || locationType === "primary";
-      console.log(
-        `[DEBUG] pasteToActiveApp - isPrimaryFolder: ${isPrimaryFolder}, platform: ${process.platform}, condition: ${
-          process.platform === "darwin" && isPrimaryFolder
-        }`
-      );
-
-      if (process.platform === "darwin" && isPrimaryFolder) {
-        console.log(`[DEBUG] Attempting to show macOS dialog for pasted snippet`);
-        try {
-          // Escape newlines and quotes in file paths for AppleScript
-          const escapedName = snippet.name.replace(/"/g, '\\"');
-          const escapedPath = snippet.fullPath.replace(/"/g, '\\"');
-          const dialogScript = `display dialog "${escapedName}" & return & "File: ${escapedPath}" with title "Snippet Pasted!" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
-          console.log(`[DEBUG] AppleScript: ${dialogScript}`);
-
-          // Run dialog in background, don't wait for completion
-          const dialogProcess = spawn("osascript", ["-e", dialogScript]);
-          console.log(`[DEBUG] Dialog process spawned with PID: ${dialogProcess.pid || "unknown"}`);
-        } catch (error) {
-          // Fallback to Raycast toast if dialog fails
-          console.log(`[DEBUG] macOS dialog failed: ${JSON.stringify(error)}`);
+        // Only show dialog for snippets in the primary folder
+        const isPrimaryFolder = !locationType || locationType === "search" || locationType === "primary";
+        if (process.platform === "darwin" && isPrimaryFolder) {
+          notify("Snippet Pasted!", "Snippet Pasted!", `${snippet.name} - Content pasted automatically`);
+        } else {
           showToast({
             style: Toast.Style.Success,
             title: "Snippet Pasted!",
             message: `${snippet.name} - Content pasted automatically`,
           });
         }
-      } else {
-        console.log(`[DEBUG] Using Raycast toast (not meeting dialog conditions)`);
-        showToast({
-          style: Toast.Style.Success,
-          title: "Snippet Pasted!",
-          message: `${snippet.name} - Content pasted automatically`,
-        });
+
+        // Close the window with a slight delay
+        setTimeout(() => closeMainWindow(), 200);
+      } catch (error) {
+        // Fallback to just copying if paste fails
+        try {
+          await Clipboard.copy(content);
+          notify(
+            "Snippet Copied!",
+            "Fallback: Snippet Copied!",
+            `${snippet.name} - Press Cmd+V to paste (auto-paste failed)`
+          );
+        } catch (fallbackError) {
+          showToast({
+            style: Toast.Style.Failure,
+            title: "Failed to handle snippet",
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
       }
+    });
 
-      // Close the window with a slight delay
-      setTimeout(() => closeMainWindow(), 200);
-    } catch (error) {
-      // Fallback to just copying if paste fails
+  const typeToActiveApp = () =>
+    withContent(async (content) => {
       try {
-        await copyAndPaste();
-        showToast({
-          style: Toast.Style.Success,
-          title: "Fallback: Snippet Copied!",
-          message: `${snippet.name} - Press Cmd+V to paste (auto-paste failed)`,
-        });
-      } catch (fallbackError) {
-        showToast({
-          style: Toast.Style.Failure,
-          title: "Failed to handle snippet",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }
-  };
+        // Escape backslashes and quotes for the AppleScript string literal
+        const escapedContent = content.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-  const typeToActiveApp = async () => {
-    try {
-      // Read the snippet file content
-      const content = await new Promise<string>((resolve, reject) => {
-        const child = spawn("cat", [snippet.fullPath]);
-        let data = "";
-        child.stdout.on("data", (chunk) => {
-          data += chunk.toString();
-        });
-        child.on("close", () => {
-          resolve(data);
-        });
-        child.on("error", reject);
-      });
-
-      // Use AppleScript to type - RUN IN BACKGROUND INDEPENDENT PROCESS
-      try {
-        // Escape quotes properly for AppleScript
-        const escapedContent = content.replace(/"/g, "\\");
-
-        // Build a self-contained AppleScript that closes window and types
-        // Use 'System Events' to quickly close frontend window with Cmd+W
+        // Build a self-contained AppleScript that closes the window and types
         const typeScript = `
-          tell application "System Events"
-            tell process "Raycast"
-              keystroke "w" using {command down}
-            end tell
-            delay 0.5
-            keystroke "${escapedContent}"
-            delay 0.1
+        tell application "System Events"
+          tell process "Raycast"
+            keystroke "w" using {command down}
           end tell
-        `;
-
-        // Run the script in background - it will continue after window closes
+          delay 0.5
+          keystroke "${escapedContent}"
+          delay 0.1
+        end tell
+      `;
         spawn("osascript", ["-e", typeScript]);
 
-        // Only show dialog for snippets in primary folder
+        // Only show dialog for snippets in the primary folder
         const isPrimaryFolder = !locationType || locationType === "search" || locationType === "primary";
-        console.log(
-          `[DEBUG] typeToActiveApp - isPrimaryFolder: ${isPrimaryFolder}, platform: ${process.platform}, condition: ${
-            process.platform === "darwin" && isPrimaryFolder
-          }`
-        );
-
         if (process.platform === "darwin" && isPrimaryFolder) {
-          console.log(`[DEBUG] Attempting to show macOS dialog for typed snippet`);
-          try {
-            // Escape newlines and quotes in file paths for AppleScript
-            const escapedName = snippet.name.replace(/"/g, '\\"');
-            const escapedPath = snippet.fullPath.replace(/"/g, '\\"');
-            const dialogScript = `display dialog "${escapedName}" & return & "File: ${escapedPath}" with title "Snippet Typed!" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
-            console.log(`[DEBUG] AppleScript: ${dialogScript}`);
-
-            // Run dialog in background, don't wait for completion
-            const dialogProcess = spawn("osascript", ["-e", dialogScript]);
-            console.log(`[DEBUG] Dialog process spawned with PID: ${dialogProcess.pid || "unknown"}`);
-          } catch (error) {
-            console.log(`[DEBUG] macOS dialog failed in type: ${JSON.stringify(error)}`);
-            // Fallback to Raycast toast if dialog fails
-            showToast({
-              style: Toast.Style.Success,
-              title: "Snippet Typed!",
-              message: `${snippet.name} - Content typed automatically`,
-            });
-          }
+          notify("Snippet Typed!", "Snippet Typed!", `${snippet.name} - Content typed automatically`);
         } else {
-          console.log(`[DEBUG] Using Raycast toast in type (not meeting conditions)`);
           showToast({
             style: Toast.Style.Success,
             title: "Snippet Typed!",
@@ -403,73 +270,21 @@ const HeavyDutyActionPanel = ({
           });
         }
 
-        // Schedule window close in background
         setTimeout(() => closeMainWindow(), 100);
       } catch (error) {
         // Fallback to clipboard method if AppleScript fails
-        await copyAndPaste();
-        showToast({
-          style: Toast.Style.Success,
-          title: "Fallback: Snippet Copied!",
-          message: `${snippet.name} - Press Cmd+V to paste (typing failed)`,
-        });
+        await Clipboard.copy(content);
+        notify(
+          "Snippet Copied!",
+          "Fallback: Snippet Copied!",
+          `${snippet.name} - Press Cmd+V to paste (typing failed)`
+        );
       }
-    } catch (error) {
-      showToast({
-        style: Toast.Style.Failure,
-        title: "Failed to type snippet",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-      throw error;
-    }
-  };
+    });
 
   const actions = [
     <Action title="Copy to Clipboard" icon={Icon.Clipboard} key="copyAndPaste" onAction={copyAndPaste} />,
-    <Action
-      title="Copy Real File Path"
-      icon={Icon.Link}
-      key="copyFilePath"
-      onAction={async () => {
-        await Clipboard.copy(snippet.fullPath);
-
-        // Show macOS dialog notification (auto-dismiss after 2 seconds)
-        if (process.platform === "darwin") {
-          try {
-            const dialogScript = `display dialog "File Path Copied: ${snippet.fullPath}" with title "Path Copied!" buttons {"OK (auto close in 2s)"} default button "OK (auto close in 2s)" giving up after 2`;
-
-            const dialogProcess = spawn("osascript", ["-e", dialogScript]);
-
-            // Don't wait for completion - let it run in background
-            dialogProcess.on("error", (error) => {
-              // Fallback to Raycast toast if dialog fails
-              showToast({
-                style: Toast.Style.Success,
-                title: "File path copied to clipboard",
-                message: snippet.fullPath,
-              });
-            });
-          } catch (error) {
-            // Fallback to Raycast toast
-            showToast({
-              style: Toast.Style.Success,
-              title: "File path copied to clipboard",
-              message: snippet.fullPath,
-            });
-          }
-        } else {
-          // Non-macOS platforms use Raycast toast
-          showToast({
-            style: Toast.Style.Success,
-            title: "File path copied to clipboard",
-            message: snippet.fullPath,
-          });
-        }
-
-        // Brief pause to let notification appear
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }}
-    />,
+    <Action title="Copy Real File Path" icon={Icon.Link} key="copyFilePath" onAction={copyRealFilePath} />,
     <Action title="Paste to Active App" icon={Icon.ArrowRight} key="paste" onAction={pasteToActiveApp} />,
     <Action title="Type to Active App" icon={Icon.Keyboard} key="type" onAction={typeToActiveApp} />,
   ];

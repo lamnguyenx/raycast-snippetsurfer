@@ -11,7 +11,13 @@ import {
 } from "@raycast/api";
 
 import { useEffect, useState } from "react";
-import { expandHomeDirectory, discoverAllSnippets, loadSnippetPreview } from "../utils/SnippetsLoader";
+import {
+  expandHomeDirectory,
+  discoverAllSnippets,
+  loadSnippetPreview,
+  readSnippetContent,
+} from "../utils/SnippetsLoader";
+import { expandTemplate } from "../utils/TemplateExpander";
 import type { State, HeavyDutySnippet } from "../types";
 import { HeavyDutyActionPanel } from "../components/CustomActionPanel";
 import * as fs from "fs";
@@ -101,6 +107,7 @@ interface SnippetSearchProps {
   searchIndexLines?: number;
   supportedExtensions?: string;
   showReloadShortcut?: boolean;
+  enableTemplates?: boolean;
 }
 
 export default function SnippetSearch({
@@ -110,6 +117,7 @@ export default function SnippetSearch({
   searchIndexLines = 3,
   supportedExtensions = "md,txt,yaml,yml,json,sh",
   showReloadShortcut = true,
+  enableTemplates = true,
 }: SnippetSearchProps) {
   const [state, setState] = useState<State>({ heavyDutySnippets: [], isLoading: true });
   const [currentPreview, setCurrentPreview] = useState<string | null>(null);
@@ -125,20 +133,11 @@ export default function SnippetSearch({
       const { spawn } = await import("child_process");
 
       try {
-        const content = await new Promise<string>((resolve, reject) => {
-          const child = spawn("cat", [snippet.fullPath]);
-          let data = "";
-          child.stdout.on("data", (chunk: Buffer) => {
-            data += chunk.toString();
-          });
-          child.on("close", () => {
-            resolve(data);
-          });
-          child.on("error", reject);
-        });
+        const rawContent = await readSnippetContent(snippet.fullPath);
+        const content = enableTemplates ? expandTemplate(rawContent) : rawContent;
 
-        // Escape quotes properly for AppleScript
-        const escapedContent = content.replace(/"/g, '"');
+        // Escape backslashes and quotes for the AppleScript string literal
+        const escapedContent = content.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
         // Build a self-contained AppleScript for typing only
         // Window will close via closeMainWindow() API
@@ -455,6 +454,7 @@ export default function SnippetSearch({
                   reloadSnippets={fetchData}
                   paths={[mainFolderPath]}
                   locationType={locationName.toLowerCase()}
+                  enableTemplates={enableTemplates}
                 />
               }
             ></List.Item>

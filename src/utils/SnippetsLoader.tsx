@@ -85,6 +85,11 @@ function getPastableContent(content: string): string {
   return pastableContent;
 }
 
+// Read a snippet file's raw content (used by actions before template expansion)
+async function readSnippetContent(fullPath: string): Promise<string> {
+  return fs.promises.readFile(fullPath, "utf8");
+}
+
 // HeavyDutySnippet: Discovery-only loading (zero memory for content)
 async function discoverAllSnippets(
   startPath: string,
@@ -240,4 +245,11 @@ async function loadSnippetPreview(snippet: HeavyDutySnippet): Promise<string> {
   }
 }
 
-export { loadAllSnippets, getPastableContent, expandHomeDirectory, discoverAllSnippets, loadSnippetPreview };
+export {
+  loadAllSnippets,
+  getPastableContent,
+  expandHomeDirectory,
+  discoverAllSnippets,
+  loadSnippetPreview,
+  readSnippetContent,
+};

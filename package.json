@@ -90,6 +90,15 @@
       "required": false,
       "default": "md,txt,yaml,yml,json,sh",
       "title": "File Extensions (order affects search priority)"
+    },
+    {
+      "name": "enableTemplates",
+      "label": "Enable dynamic date/time tokens",
+      "description": "Replace tokens like {{date:yyyy/MM/dd}} and {{time:HH:mm}} with the current date/time when copying, pasting, or typing a snippet.",
+      "type": "checkbox",
+      "required": false,
+      "default": true,
+      "title": "Dynamic Tokens"
     }
   ],
   "dependencies": {

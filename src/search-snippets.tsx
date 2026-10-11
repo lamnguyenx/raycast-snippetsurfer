@@ -7,6 +7,7 @@ export default function Command() {
     primaryAction?: string;
     searchIndexLines?: string;
     supportedExtensions: string;
+    enableTemplates?: boolean;
   }>();
 
   return (
@@ -16,6 +17,7 @@ export default function Command() {
       primaryAction={preferences.primaryAction}
       searchIndexLines={parseInt(preferences.searchIndexLines || "3")}
       supportedExtensions={preferences.supportedExtensions}
+      enableTemplates={preferences.enableTemplates ?? true}
     />
   );
 }
