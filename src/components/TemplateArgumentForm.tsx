@@ -3,10 +3,10 @@ import type { TemplatePrompt } from "../utils/TemplateExpander";
 
 interface TemplateArgumentFormProps {
   prompts: TemplatePrompt[];
-  onSubmit: (values: { [label: string]: string }) => void;
+  onSubmit: (values: { [id: string]: string }) => void;
 }
 
-// Collects values for {{ask:Label}} tokens before a snippet action runs.
+// Collects values for {{ask:Label}} and {{choice:...}} tokens before a snippet action runs.
 export default function TemplateArgumentForm({ prompts, onSubmit }: TemplateArgumentFormProps) {
   const { pop } = useNavigation();
 
@@ -19,22 +19,30 @@ export default function TemplateArgumentForm({ prompts, onSubmit }: TemplateArgu
             title="Insert Snippet"
             onSubmit={(values: Form.Values) => {
               pop();
-              onSubmit(values as { [label: string]: string });
+              onSubmit(values as { [id: string]: string });
             }}
           />
         </ActionPanel>
       }
     >
       <Form.Description text={`This snippet needs ${prompts.length === 1 ? "a value" : `${prompts.length} values`}.`} />
-      {prompts.map((prompt) => (
-        <Form.TextField
-          key={prompt.label}
-          id={prompt.label}
-          title={prompt.label}
-          defaultValue={prompt.defaultValue}
-          placeholder={`Enter ${prompt.label}`}
-        />
-      ))}
+      {prompts.map((prompt) =>
+        prompt.kind === "choice" ? (
+          <Form.Dropdown key={prompt.id} id={prompt.id} title={prompt.label} defaultValue={prompt.defaultValue}>
+            {(prompt.options ?? []).map((option) => (
+              <Form.Dropdown.Item key={option} value={option} title={option} />
+            ))}
+          </Form.Dropdown>
+        ) : (
+          <Form.TextField
+            key={prompt.id}
+            id={prompt.id}
+            title={prompt.label}
+            defaultValue={prompt.defaultValue}
+            placeholder={`Enter ${prompt.label}`}
+          />
+        )
+      )}
     </Form>
   );
 }

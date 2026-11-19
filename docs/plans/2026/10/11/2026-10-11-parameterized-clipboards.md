@@ -102,6 +102,7 @@ Two Mini snippets were parameterized:
 
 - `{{git:HEAD}}` auto-token to self-fill the latest commit hash (declined for now).
 - `{{uuid}}`, `{{random:N}}`, `{{clipboard}}`, `{{cursor}}`.
-- Multiline and dropdown prompt fields; remembering previous values.
+- Multiline prompt fields; remembering previous values. (Dropdown prompts are now
+  implemented as `{{choice:...}}`; see the 2026-11-19 multiple-choice plan.)
 - Frontmatter-declared parameter types/defaults.
 - Reviving and making prompt-aware the (currently unwired) Mini "Enter to type" path.

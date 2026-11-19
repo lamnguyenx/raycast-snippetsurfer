@@ -10,6 +10,8 @@
 // Prompt tokens (filled in by the user through a form before the snippet is used):
 //   {{ask:Topic}}            -> prompts for "Topic"
 //   {{ask:Env=staging}}      -> prompts for "Env", prefilled with "staging"
+//   {{choice:A|B}}           -> dropdown with options A and B, first preselected
+//   {{choice:Model=A|B}}     -> dropdown titled "Model"
 //
 // Expansion happens at action time (copy / paste / type) so tokens always reflect
 // the moment the snippet is used. Unknown tokens are left untouched, and a token can
@@ -70,13 +72,32 @@ export function formatDate(date: Date, pattern: string): string {
 }
 
 export interface TemplatePrompt {
+  /** Stable key used as the form field id and in the values map. */
+  id: string;
+  /** Human-readable field title. */
   label: string;
+  /** Form control to render for this prompt. */
+  kind: "text" | "choice";
+  /** Prefilled text value, or the initially selected choice. */
   defaultValue: string;
+  /** Options offered by choice prompts. */
+  options?: string[];
+}
+
+interface ParsedChoice {
+  /** Explicit title from the token, or "" when none was provided. */
+  label: string;
+  options: string[];
+}
+
+/** Returns the id of the form field that backs a {{choice:...}} token. */
+function choicePromptId(arg?: string): string {
+  return `choice:${arg ?? ""}`;
 }
 
 interface ExpandContext {
   now: Date;
-  values: { [label: string]: string };
+  values: { [id: string]: string };
 }
 
 type TokenHandler = (context: ExpandContext, arg?: string) => string;
@@ -105,7 +126,7 @@ function resolveSpec(now: Date, arg: string | undefined, defaultPattern: string)
 
 // Parse the argument of an {{ask:...}} token into a label and optional default.
 // Syntax: "Label" or "Label=Default value".
-function parseAskArg(arg?: string): TemplatePrompt {
+function parseAskArg(arg?: string): { label: string; defaultValue: string } {
   const raw = (arg ?? "").trim();
   const equalsIndex = raw.indexOf("=");
   if (equalsIndex === -1) {
@@ -115,6 +136,84 @@ function parseAskArg(arg?: string): TemplatePrompt {
     label: raw.slice(0, equalsIndex).trim(),
     defaultValue: raw.slice(equalsIndex + 1),
   };
+}
+
+// Find the first separator that is not escaped with a backslash.
+function findUnescaped(input: string, separator: string): number {
+  for (let index = 0; index < input.length; index++) {
+    if (input[index] === "\\") {
+      index++;
+      continue;
+    }
+    if (input[index] === separator) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+// Split choices on unescaped pipes, unescape "\|", "\=", and "\\", then trim and
+// drop empty or duplicate options.
+function splitChoiceOptions(input: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index];
+    if (char === "\\" && index + 1 < input.length) {
+      const next = input[index + 1];
+      if (next === "|" || next === "=" || next === "\\") {
+        current += next;
+        index++;
+        continue;
+      }
+    }
+    if (char === "|") {
+      parts.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  parts.push(current);
+
+  const seen = new Set<string>();
+  return parts
+    .map((option) => option.trim())
+    .filter((option) => {
+      if (!option || seen.has(option)) {
+        return false;
+      }
+      seen.add(option);
+      return true;
+    });
+}
+
+// Parse the argument of a {{choice:...}} token.
+// Syntax: "A|B|C" or "Label=A|B|C". An optional leading "Label=" is recognized
+// only when it appears before the first pipe.
+function parseChoiceArg(arg?: string): ParsedChoice | null {
+  const raw = (arg ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  const equalsIndex = findUnescaped(raw, "=");
+  const pipeIndex = findUnescaped(raw, "|");
+  let label = "";
+  let optionsRaw = raw;
+
+  if (equalsIndex !== -1 && (pipeIndex === -1 || equalsIndex < pipeIndex)) {
+    label = raw.slice(0, equalsIndex).trim();
+    optionsRaw = raw.slice(equalsIndex + 1);
+  }
+
+  const options = splitChoiceOptions(optionsRaw);
+  if (options.length === 0) {
+    return null;
+  }
+
+  return { label, options };
 }
 
 const HANDLERS: { [name: string]: TokenHandler } = {
@@ -128,6 +227,14 @@ const HANDLERS: { [name: string]: TokenHandler } = {
     }
     return Object.prototype.hasOwnProperty.call(values, label) ? values[label] : defaultValue;
   },
+  choice: ({ values }, arg) => {
+    const choice = parseChoiceArg(arg);
+    if (!choice) {
+      return "";
+    }
+    const id = choicePromptId(arg);
+    return Object.prototype.hasOwnProperty.call(values, id) ? values[id] : choice.options[0];
+  },
 };
 
 // A token is {{ name }} or {{ name:arg }}. The negative lookbehind skips escaped
@@ -138,8 +245,11 @@ const ESCAPED_OPEN_REGEX = /\\\{\{/g;
 export interface ExpandTemplateOptions {
   /** Reference date for auto tokens (defaults to now). All tokens in a call share it. */
   now?: Date;
-  /** Values for {{ask:Label}} tokens, keyed by label. */
-  values?: { [label: string]: string };
+  /**
+   * Values for prompt tokens, keyed by prompt id. Ask prompts use their label as the id;
+   * choice prompts use "choice:<raw argument>".
+   */
+  values?: { [id: string]: string };
 }
 
 /**
@@ -164,8 +274,8 @@ export function expandTemplate(content: string, options: ExpandTemplateOptions =
 }
 
 /**
- * Find all {{ask:Label}} prompts in content, de-duplicated by label and in order
- * of first appearance. Escaped tokens (\{{ask:...}}) are ignored.
+ * Find all {{ask:Label}} and {{choice:...}} prompts in content, de-duplicated and
+ * in order of first appearance. Escaped tokens are ignored.
  */
 export function findTemplatePrompts(content: string): TemplatePrompt[] {
   if (!content) {
@@ -173,20 +283,43 @@ export function findTemplatePrompts(content: string): TemplatePrompt[] {
   }
 
   const prompts: TemplatePrompt[] = [];
-  const seen = new Set<string>();
+  const seenLabels = new Set<string>();
+  const seenChoiceTokens = new Set<string>();
   const regex = new RegExp(TOKEN_REGEX.source, "gi");
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(content)) !== null) {
-    if (match[1].toLowerCase() !== "ask") {
+    const name = match[1].toLowerCase();
+    const arg = match[2];
+
+    if (name === "ask") {
+      const { label, defaultValue } = parseAskArg(arg);
+      if (!label || seenLabels.has(label)) {
+        continue;
+      }
+      seenLabels.add(label);
+      prompts.push({ id: label, label, kind: "text", defaultValue });
       continue;
     }
-    const prompt = parseAskArg(match[2]);
-    if (!prompt.label || seen.has(prompt.label)) {
-      continue;
+
+    if (name === "choice") {
+      const choice = parseChoiceArg(arg);
+      if (!choice) {
+        continue;
+      }
+      const id = choicePromptId(arg);
+      if (seenChoiceTokens.has(id)) {
+        continue;
+      }
+      seenChoiceTokens.add(id);
+      prompts.push({
+        id,
+        label: choice.label || "Choose",
+        kind: "choice",
+        defaultValue: choice.options[0],
+        options: choice.options,
+      });
     }
-    seen.add(prompt.label);
-    prompts.push(prompt);
   }
 
   return prompts;

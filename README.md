@@ -14,6 +14,7 @@
 - Automatically copies only the content inside code blocks for code snippets
 - Dynamic date/time tokens (e.g. `{{date:yyyy/MM/dd}}`) resolved at copy/paste/type time
 - Interactive `{{ask:Label}}` parameters that prompt for values before a snippet is used
+- Interactive `{{choice:A|B}}` dropdowns for picking from a fixed set of options
 - Streamlined workflow for developers and content creators
 
 ## Getting Started
@@ -96,10 +97,41 @@ Deploy checkout to staging on 2026-10-11
 - Fields are single-line text. Values are not remembered between uses.
 - Escape with a leading backslash to output a token literally: `\{{ask:X}}` → `{{ask:X}}`.
 
+## Multiple Choice Parameters
+
+When a snippet should offer a fixed set of values instead of free text, use a `{{choice:...}}` token and separate the options with `|`:
+
+```text
+model: {{choice:VAI 2/glm-5.3|opencode-go/deepseek-v4.1-flash}}
+```
+
+Using the snippet opens a small form with a dropdown (the first option is selected by default), then inserts the chosen value:
+
+```text
+model: opencode-go/deepseek-v4.1-flash
+```
+
+### Tokens
+
+| Token | Behavior |
+| --- | --- |
+| `{{choice:A\|B}}` | Dropdown titled `Choose` with options `A` and `B`. |
+| `{{choice:Model=A\|B}}` | Same, but the field is titled `Model`. |
+
+### Behavior
+
+- The first option is selected by default; whitespace around options is trimmed.
+- Repeating the exact same `{{choice:...}}` token reuses one dropdown and its value.
+- Escape a literal pipe with `\|`, a literal `=` with `\=`, or a literal backslash with `\\` inside an option.
+- Choices can be combined with `{{ask:...}}` and date/time tokens in the same form.
+
 ## Documentation
 
 - [Snippet Tokens & Parameters](docs/important/snippet-tokens.md) — full token reference.
-- [Parameterized Snippets plan](docs/plans/2026/10/11/2026-10-11-parameterized-clipboards.md) — design and lessons learnt.
+- [Multiple-choice prompts plan](docs/plans/2026/11/19/2026-11-19-multiple-choice-prompts.md) — design, trials, and lessons learnt.
+- [Token engine module](src/utils/README.md) — `TemplateExpander` and token parsing.
+- [Prompt form module](src/components/README.md) — `TemplateArgumentForm` and dropdown rendering.
+- [Parameterized Snippets plan](docs/plans/2026/10/11/2026-10-11-parameterized-clipboards.md) — earlier token/prompt design.
 
 ## Development Setup
 

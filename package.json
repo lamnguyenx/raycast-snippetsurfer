@@ -93,8 +93,8 @@
     },
     {
       "name": "enableTemplates",
-      "label": "Enable dynamic date/time tokens",
-      "description": "Replace tokens like {{date:yyyy/MM/dd}} and {{time:HH:mm}} with the current date/time when copying, pasting, or typing a snippet.",
+      "label": "Enable dynamic tokens and prompts",
+      "description": "Replace tokens like {{date:yyyy/MM/dd}} and {{time:HH:mm}}, and show {{ask:...}} or {{choice:...}} fields when copying, pasting, or typing a snippet.",
       "type": "checkbox",
       "required": false,
       "default": true,

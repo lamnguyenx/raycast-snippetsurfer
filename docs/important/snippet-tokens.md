@@ -21,6 +21,8 @@ extension settings via the **Dynamic Tokens** preference (on by default).
 | `{{date:timestamp}}` | Unix milliseconds |
 | `{{ask:Label}}` | prompts for a single-line text value |
 | `{{ask:Label=Default}}` | prompts, prefilled with `Default` |
+| `{{choice:A\|B}}` | dropdown with options `A` and `B`, first selected |
+| `{{choice:Label=A\|B}}` | dropdown titled `Label`, first option selected |
 
 ## Date pattern symbols
 
@@ -29,13 +31,40 @@ extension settings via the **Dynamic Tokens** preference (on by default).
 Longest symbols win (`MMMM` beats `MM`, `EEEE` beats `EEE`). Anything that is not a known
 symbol is emitted literally, so `{{datetime:yyyy-MM-dd'T'HH:mm}}` is valid.
 
+## Multiple-choice prompts
+
+`{{choice:...}}` renders a dropdown instead of a text field. Separate the options with
+`|`:
+
+```
+model: {{choice:VAI 2/glm-5.3|opencode-go/deepseek-v4.1-flash}}
+```
+
+The first option is selected by default and is also the fallback when no form is shown.
+Options are trimmed, empty entries are ignored, and duplicate entries are collapsed.
+
+An optional title goes before the first `=`:
+
+```
+model: {{choice:Model=VAI 2/glm-5.3|opencode-go/deepseek-v4.1-flash}}
+```
+
+Without a title, the field is labelled `Choose`. A choice prompt is identified by its
+full token, so repeating the exact same `{{choice:...}}` reuses one value, while two
+different option lists get separate dropdowns.
+
+Use `\|` for a literal pipe, `\=` for a literal equals sign, and `\\` for a literal
+backslash. An unescaped `=` before the first `|` is treated as the title separator, so
+escape it when the first option itself contains `=` (e.g. `{{choice:a\=b|c}}`).
+
 ## Rules
 
 - **Action-time resolution.** All tokens in one use share a single timestamp.
 - **Unknown tokens are preserved.** `{{foo}}` stays `{{foo}}`.
 - **Escaping.** Prefix with a backslash to emit a token literally: `\{{date}}` → `{{date}}`.
-- **Prompts are unique.** One field per distinct label; a label used twice shares one value.
-- **Single-line text only.** Prompt values are not stored between uses.
+- **Prompts are unique.** One text field per distinct `ask` label; one dropdown per
+  distinct `choice` token. Repeated prompts share the selected value.
+- **Values are not stored.** Prompt values are not remembered between uses.
 
 ## Examples
 
@@ -51,12 +80,24 @@ Prompts combined with auto tokens:
 Deploy {{ask:Service}} to {{ask:Environment=staging}} on {{date:yyyy-MM-dd}}
 ```
 
+Pick one of a fixed set of values:
+
+```
+model: {{choice:Model=VAI 2/glm-5.3|opencode-go/deepseek-v4.1-flash}}
+```
+
 ## Implementation map
 
-- Expansion & prompt parsing: `src/utils/TemplateExpander.ts`
-- Prompt form UI: `src/components/TemplateArgumentForm.tsx`
+- Expansion, prompt parsing & choice parsing:
+  [`src/utils/TemplateExpander.ts`](../../src/utils/TemplateExpander.ts) —
+  [module reference](../../src/utils/docs/important/choice-token.md)
+- Prompt form UI (text fields & dropdowns):
+  [`src/components/TemplateArgumentForm.tsx`](../../src/components/TemplateArgumentForm.tsx) —
+  [module reference](../../src/components/docs/important/choice-form.md)
 - Action wiring: `src/components/CustomActionPanel.tsx` (`HeavyDutyActionPanel`)
 - Preference: `package.json` → `enableTemplates`
 
-See `docs/plans/2026/10/11/2026-10-11-parameterized-clipboards.md` for the design and
-lessons learnt.
+Design and lessons learnt:
+
+- [Multiple-choice prompts plan](../plans/2026/11/19/2026-11-19-multiple-choice-prompts.md)
+- [Parameterized snippets plan](../plans/2026/10/11/2026-10-11-parameterized-clipboards.md)
