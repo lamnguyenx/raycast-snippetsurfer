@@ -24,7 +24,7 @@ engine needed to:
 
 ```ts
 interface TemplatePrompt {
-  id: string; // form field id and values-map key
+  id: string; // stable key for discovery and expansion
   label: string; // human-readable field title
   kind: "text" | "choice";
   defaultValue: string; // text prefill or initially selected option
@@ -89,16 +89,18 @@ collide.
 - `defaultValue` is the first option for choices.
 - `options` is non-empty whenever `kind === "choice"` reaches the form.
 
-`TemplateArgumentForm` must use `prompt.id` for keys and form ids, not `prompt.label`.
+`TemplateArgumentForm` assigns generated Raycast field IDs and translates submissions
+to the stable `prompt.id` keys before calling the expander.
 
 ## Trials, Errors & Lessons Learnt
 
 - **A single `seen` set was too coarse.** Ask labels and choice ids are different
   namespaces. Separate sets make the de-duplication rule obvious and prevent theoretical
   collisions.
-- **Raw token argument is the right id.** It is deterministic across discovery and
-  expansion, survives labels, and avoids maintaining an index map that could drift when
-  prompts are reordered.
+- **The raw token argument is a stable expansion key.** The original UI also used it
+  as a Raycast field ID. That form displayed the Model dropdown but did not submit.
+  Generated field IDs restored submission while preserving the expansion key. The fix
+  lives in the form, and the parser required no code changes.
 - **Escape handling belongs in the splitter.** The token regex only needs to capture the
   argument; unescaping `\|`, `\=`, and `\\` is a parsing concern. Keeping it in
   `splitChoiceOptions()` makes the behavior testable and avoids control-character
@@ -131,7 +133,12 @@ Temporary smoke test coverage:
 - unknown-token preservation;
 - existing ask and date token behavior.
 
-Project gates: `npx tsc --noEmit`, `npm run lint`, `npm run build`.
+The mixed `ask` and `choice` example from the manual guide was also checked against
+the transpiled expander. It discovered an empty Name and default Place of Earth,
+then expanded the edited values to `Hello Ada from Mars.`. Live Raycast confirmed
+that the non-default Model choice reached the expander through the fixed form.
+
+Project gates passed with `npx tsc --noEmit`, `npm run lint`, and `npm run build`.
 
 ## Related Documents
 

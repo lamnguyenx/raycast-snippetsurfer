@@ -54,10 +54,8 @@ the first option.
 choice:${rawArgument}
 ```
 
-The raw argument is the text between `choice:` and `}}`. It is used as both:
-
-- the form field id, and
-- the key in the values map passed to `expandTemplate()`.
+The raw argument is the text between `choice:` and `}}`. The resulting ID identifies
+the prompt during discovery and keys the values passed to `expandTemplate()`.
 
 Consequences:
 
@@ -108,12 +106,18 @@ Options: `a|b`, `c`.
 
 `TemplateArgumentForm` receives `TemplatePrompt[]` and must:
 
-- use `prompt.id` as the React key and form field id;
+- assign generated Raycast field IDs such as `prompt-0` and translate the submitted
+  values back to `prompt.id` before expansion;
 - render `Form.Dropdown` when `kind === "choice"`;
 - use `prompt.options` as items;
 - use `prompt.defaultValue` as the initial selection.
 
 `options` is guaranteed to be non-empty for every choice prompt that reaches the form.
+
+Choice keys may contain the label, delimiters, and punctuation from the raw argument.
+Passing those keys directly as field IDs reproduced the submit failure with the
+Model snippet. The generated IDs let Raycast submit while the expander keeps the
+same token identity. [Form reference](../../../components/docs/important/choice-form.md)
 
 ## Validation
 

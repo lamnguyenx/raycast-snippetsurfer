@@ -13,7 +13,7 @@ flow unchanged.
 
 ## Implementation
 
-The form now branches on `TemplatePrompt.kind`:
+The original dropdown implementation branched on `TemplatePrompt.kind`. This example records its first version.
 
 ```tsx
 prompts.map((prompt) =>
@@ -35,7 +35,7 @@ prompts.map((prompt) =>
 );
 ```
 
-Key points:
+Original rendering details
 
 - `prompt.id` is used for the React key and the form field id.
 - `prompt.label` is display-only.
@@ -51,7 +51,7 @@ Key points:
 - `kind === "text"` has a `defaultValue` (possibly empty) and no meaningful `options`.
 - `kind === "choice"` has a non-empty `options` array and a `defaultValue` equal to one
   of those options.
-- `id` is unique across the form and is the same key used by expansion.
+- `id` is the stable key used by expansion. The form translates from generated field IDs.
 - `label` may repeat in theory (two unlabeled choices are both titled `Choose`), so it
   must never be used as the identity.
 
@@ -70,9 +70,9 @@ an empty dropdown.
 - **Defaults must be real option values.** `defaultValue` is set to `options[0]` by the
   parser. The form does not invent a default or an empty placeholder, which could submit a
   value that expansion does not know about.
-- **No local state is needed.** `Action.SubmitForm` already collects the values and the
-  existing `withContent()` flow owns the read → prompt → expand sequence. Adding local
-  state would create a second source of truth for selections.
+- **The original single action could use Raycast's submitted values directly.**
+  Supporting alternate actions later required controlled values so every action
+  could read the current selections.
 - **The component stays token-agnostic.** It only knows `text` and `choice` prompt kinds,
   not the `{{ask:...}}` or `{{choice:...}}` syntax. Future prompt kinds can be added in the
   prompt model and a new branch here without changing the action wiring.
@@ -93,10 +93,12 @@ The temporary expander smoke test covered the id/value mapping that the form rel
 
 ## Follow-up: Action-Aware Submission
 
-The original form had one **Insert Snippet** submit action. It now renders one
-`Action.SubmitForm` per content action (copy, paste, type), with the action that opened the
-form listed first. **Known caveat (open bug):** with multiple submit actions, `⌘↵` renders
-on the first button but does not fire any `onSubmit` — submission is a no-op. See:
+The first action-aware version replaced **Insert Snippet** with three submit
+actions. The live regression persisted after restoring a single native submit.
+Generated Raycast field IDs resolved it. The final form uses one native submit
+for the opening action and two plain actions with controlled values.
+
+- [Current component plan](2026-11-19-action-submit-form-panel.md)
 
 - [`Prompt Form Content Actions`](../../../../../../../docs/plans/2026/11/19/2026-11-19-prompt-form-content-actions.md)
 - [`⌘↵ no-op bug (module)`](../../../../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md)

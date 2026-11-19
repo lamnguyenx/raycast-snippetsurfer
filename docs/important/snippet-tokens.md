@@ -66,9 +66,9 @@ escape it when the first option itself contains `=` (e.g. `{{choice:a\=b|c}}`).
   distinct `choice` token. Repeated prompts share the selected value.
 - **All content actions are available.** After filling the prompt form, choose **Copy to
   Clipboard**, **Paste to Active App**, or **Type to Active App**. The action you chose is
-  listed first, and copy is always available. (Known issue, open 2026-11-19: `⌘↵`
-  currently does not submit this form — see
-  [the bug doc](../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md).)
+  listed first. Press **⌘ + Enter** or click the primary action in the form footer.
+  Open the action panel with **⌘ + K** to switch. Plain **Enter** runs the primary
+  action in the snippet list.
 - **Values are not stored.** Prompt values are not remembered between uses.
 
 ## Examples
@@ -102,8 +102,9 @@ model: {{choice:Model=VAI 2/glm-5.3|opencode-go/deepseek-v4.1-flash}}
 - Action wiring: `src/components/CustomActionPanel.tsx` (`HeavyDutyActionPanel`)
 - Preference: `package.json` → `enableTemplates`
 
-Open issues:
+Testing and regression history
 
+- [Manual Raycast test guide](how-to-test.md)
 - [Prompt form `⌘↵` no-op](../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md)
 
 Design and lessons learnt:

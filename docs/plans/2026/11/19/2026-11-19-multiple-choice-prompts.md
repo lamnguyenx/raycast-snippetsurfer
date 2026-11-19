@@ -77,8 +77,8 @@ unescaped `|`. The label is presentation only; the value contract is the full ra
 - `parseChoiceArg()` splits the optional title and the option list.
 - `splitChoiceOptions()` splits on unescaped pipes, unescapes `\|`, `\=`, and `\\`, then
   trims, drops empty entries, and collapses duplicates.
-- `choicePromptId()` returns `choice:${rawArgument}`. This is the form field id and the key
-  used in the submitted values map.
+- `choicePromptId()` returns `choice:${rawArgument}`. This keys the values map consumed
+  by expansion. The form converts its generated field IDs to these keys.
 - `findTemplatePrompts()` discovers both `ask` and `choice` prompts in source order.
   `ask` prompts de-duplicate by label; `choice` prompts de-duplicate by full token id.
 - `expandTemplate()` resolves a choice to the submitted value, falling back to the first
@@ -118,10 +118,10 @@ metadata delimiter needs an explicit escape path and prominent documentation.
 
 ### Deterministic prompt ids
 
-The form field id and the expansion lookup key must be identical. Using the option list
-alone would break labeled and unlabeled variants; using the label would collide for two
-unlabeled choices. We use the full raw token argument prefixed with `choice:`. This keeps
-discovery and expansion in sync without maintaining an index map.
+Discovery and expansion derive the same key from the full raw token argument.
+That distinguishes labeled and unlabeled variants and choices with the same label.
+Raycast form fields use generated IDs. The submit handler translates them to the
+deterministic expansion keys. [Prompt form content actions](2026-11-19-prompt-form-content-actions.md)
 
 ### Different de-duplication semantics
 
@@ -135,8 +135,8 @@ make the contract explicit and avoid theoretical cross-kind collisions.
 
 `TemplateArgumentForm` originally used `prompt.label` as both the React key and the form
 id. That was safe for `ask`, where labels are unique, but not for choices: two different
-unlabeled option lists would both be titled `Choose`. The prompt model gained a separate
-`id`, and the form now uses `prompt.id` while showing `prompt.label`.
+unlabeled option lists would both be titled `Choose`. The prompt model gained a separate expansion key. The form assigns each field a
+generated ID and shows `prompt.label`.
 
 ### Empty dropdowns
 

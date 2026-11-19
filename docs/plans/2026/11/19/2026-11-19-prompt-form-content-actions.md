@@ -1,8 +1,8 @@
 # Prompt Form Content Actions
 
 **Date**: 2026-11-19
-**Status**: Implemented — blocked by an open bug (`⌘↵` does not submit; see bug docs)
-**Scope**: Parent extension (`raycast-snippetsurfer`) + `src/components`
+**Status**: Implemented and verified in live Raycast for both copy paths
+**Scope**: SnippetSurfer, `src/components`, and the `src/utils` expansion contract
 
 ## Problem Statement
 
@@ -14,63 +14,56 @@ like every other snippet: pick, then copy.
 
 ## What We Built
 
-- `TemplateArgumentForm` now receives an ordered `actions` array instead of one `onSubmit`
-  callback; each entry renders as its own `Action.SubmitForm`:
-  - **Copy to Clipboard**
-  - **Paste to Active App**
-  - **Type to Active App**
-- The action that opened the form stays first; copy is always available.
-- `HeavyDutyActionPanel` extracts the copy, paste, and type bodies into content runners
-  (`ContentAction { title, icon, run }`) shared by the list action panel and the form.
-- Submit actions are direct `ActionPanel` children (no `ActionPanel.Section` wrapper).
-
-## Known Issue (open)
-
-`⌘↵` renders on the primary submit button but does not fire any `onSubmit`. Submission
-is a no-op in the current build. Details, attempted fixes, and the follow-up plan:
-
-- [`docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md`](../../../../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md)
-
-Clarity note (not a bug): in a Raycast **List**, `↵` runs the primary action; in a
-**Form**, the submit shortcut is `⌘↵`, so plain `↵` after the form opens is expected to
-be consumed by the dropdown/field.
+- The form keeps the action that opened it first. A single native submit action runs
+  that action with **⌘ + Enter**. **⌘ + K** opens the panel for Copy, Paste, and Type.
+- Raycast receives generated field IDs such as `prompt-0`. The form translates native
+  submissions back to the token keys used by `expandTemplate()`. Alternate actions
+  use the current controlled values keyed by the same token keys.
+- `HeavyDutyActionPanel` shares content runners between the list and form.
+- Mouse users can choose a value and click **Copy to Clipboard** when Copy is the opening
+  action. Plain **Enter** runs the primary action in a list. Raycast forms use
+  **⌘ + Enter** for the primary action, and custom shortcuts require a modifier.
+  [Raycast action panel](https://developers.raycast.com/api-reference/user-interface/action-panel) · [Keyboard API](https://developers.raycast.com/api-reference/keyboard)
 
 ## Module Map
 
 | Module | Responsibility | Documentation |
 | --- | --- | --- |
 | Parent extension | User-facing docs, token reference, cross-module contract | this plan; `docs/important/snippet-tokens.md` |
-| `src/components` | Submit-action rendering, content runners, form wiring | `src/components/docs/plans/2026/11/19/2026-11-19-action-submit-form-panel.md`; `src/components/docs/important/choice-form.md` |
+| `src/components` | Form field IDs, submit actions, and content runners | [Component plan](../../../../../src/components/docs/plans/2026/11/19/2026-11-19-action-submit-form-panel.md) |
+| `src/utils` | Prompt discovery and expansion by token key | [Parser plan](../../../../../src/utils/docs/plans/2026/11/19/2026-11-19-choice-token-parser.md) |
 
 ## Trials, Errors & Lessons Learnt
 
-- **"Opening action first" beat "preference first".** Ordering the form's actions by the
-  `primaryAction` preference was the first draft; it was replaced because the action the
-  user just chose from the list is the stronger signal in a secondary view.
-- **`ActionPanel.Section` around submit actions broke `⌘↵`.** The action panel rendered
-  fine with actions grouped in a section, but the form submit shortcut went inert. Direct
-  `ActionPanel` children are the documented-looking shape for forms.
-- **`pop()` after the action starts.** Matches official form examples: run the submit
-  work, then navigate back.
-- **Explicit `shortcut` on `SubmitForm` was reverted.** Redefining the default `⌘↵` has a
-  history of render errors (raycast/extensions#898) and duplicated the binding the form
-  already assigns.
-- **The single-submit form worked.** The multi-action change is what correlates with the
-  regression; that is the leading hypothesis in the bug doc (multiple
-  `Action.SubmitForm` per form may be unsupported). The likely long-term shape is one
-  `SubmitForm` plus state-tracked plain actions.
-- **Scripted verification is fragile against Raycast.** The Raycast window is an
-  `AXSystemDialog` bound to the active Space; keystroke automation repeatedly targeted
-  the frontmost browser instead, and `screencapture` was permission-blocked. The
-  Accessibility tree plus `pbpaste` were the reliable probes. Desktop automation on the
-  user's active workspace was stopped at their request; future UI tests belong in a
-  separate user account or VM.
+- The initial form followed the configured primary action. Ordering by the action the
+  user selected kept Paste or Type first when they explicitly opened the form that way.
+- Commit `6ad0101` rendered one `Action.SubmitForm` per action. The buttons appeared,
+  but **⌘ + Enter** left the form open and the clipboard unchanged. Removing the
+  `ActionPanel.Section` wrapper and moving `pop()` after the callback started still
+  reproduced the failure. An explicit binding for the built-in shortcut was reverted
+  before user testing.
+- One native submit action plus ordinary actions passed build, lint, and a mocked
+  component check. The user still reproduced the bug after loading the isolated
+  checkout. Restarting Raycast also left it reproducible. A direct click on the Copy
+  button failed as well, so the failure could occur without using the keyboard shortcut.
+- Generated Raycast field IDs restored submission on the original Model snippet.
+  Keep those IDs separate from template keys, which may contain the raw argument,
+  including punctuation. The test verified the ID change as a whole.
+- A separate checkout supported local build and lint without affecting the main
+  checkout. Live testing required an active macOS session. The temporary Swift
+  probe confirmed Raycast focus, drove the visible controls, and checked the clipboard.
+  Accessibility labels and shortcut badges alone only confirmed rendering.
 
 ## Validation
 
-- `npx tsc --noEmit`
-- `npm run lint`
-- `npm run build`
+- TypeScript, build, and lint passed. Build and lint also passed after applying the fix
+  to the main checkout.
+- In live Raycast, **⌘ + Enter** copied the edited Model choice from the original
+  reproduction. **⌘ + K → Copy to Clipboard** worked with Copy and Paste as the opening
+  action. The user confirmed the fix.
+- Insertion into an external app via Paste or Type remains outside the verified live
+  paths. The [manual test guide](../../../../important/how-to-test.md) includes steps
+  for both actions. The temporary Swift script stayed outside the repo.
 
 ## Related Documents
 

@@ -22,8 +22,8 @@ interface TemplateArgumentFormProps {
 ```
 
 `actions` is the ordered list of content actions (copy, paste, type). The action that
-opened the form is first; the remaining actions follow. Each action becomes its own
-`Action.SubmitForm`, so submitting the form always runs the action the user picked.
+opened the form is first and uses Raycast’s native form submission. The remaining
+actions are available in the action panel.
 
 `TemplatePrompt` is defined in `src/utils/TemplateExpander.ts`:
 
@@ -41,44 +41,21 @@ interface TemplatePrompt {
 
 ### Action panel
 
-```tsx
-<ActionPanel>
-  {actions.map((action) => (
-    <Action.SubmitForm
-      key={action.title}
-      title={action.title}
-      icon={action.icon}
-      onSubmit={(values) => {
-        const result = action.onSubmit(values);
-        pop();
-        return result;
-      }}
-    />
-  ))}
-</ActionPanel>
-```
-
-All content actions submit the same form values. The form does not decide whether the
-snippet is copied, pasted, or typed; each action callback owns that behavior.
-
-Keep the `Action.SubmitForm` elements as direct children of `ActionPanel`. Wrapping them in
-an `ActionPanel.Section` can stop Raycast's form submit shortcut (`⌘↵`) from firing.
-
-**Known issue (open, 2026-11-19):** even as direct children, the multi-submit panel does
-not react to `⌘↵` — the badge renders but no `onSubmit` fires. All official Raycast
-examples use exactly one `Action.SubmitForm` per form; multiple submit actions are the
-prime suspect. Until resolved, treat the single-submit shape as the last known-good
-configuration and see
-[`docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md`](../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md).
+The primary action is a direct `Action.SubmitForm` child of the action panel and
+receives values from Raycast on submit. The alternate actions use `Action` and
+read the current values from React state. Text and dropdown fields update that
+state through `onChange`. The submit handler maps each generated Raycast field
+ID back to its prompt ID before expansion.
 
 ### Text prompts (`kind: "text"`)
 
 ```tsx
 <Form.TextField
-  key={prompt.id}
-  id={prompt.id}
+  key={prompt.fieldId}
+  id={prompt.fieldId}
   title={prompt.label}
-  defaultValue={prompt.defaultValue}
+  value={values[prompt.id]}
+  onChange={(value) => updateValue(prompt.id, value)}
   placeholder={`Enter ${prompt.label}`}
 />
 ```
@@ -87,10 +64,11 @@ configuration and see
 
 ```tsx
 <Form.Dropdown
-  key={prompt.id}
-  id={prompt.id}
+  key={prompt.fieldId}
+  id={prompt.fieldId}
   title={prompt.label}
-  defaultValue={prompt.defaultValue}
+  value={values[prompt.id]}
+  onChange={(value) => updateValue(prompt.id, value)}
 >
   {prompt.options.map((option) => (
     <Form.Dropdown.Item key={option} value={option} title={option} />
@@ -100,17 +78,16 @@ configuration and see
 
 ## Invariants
 
-- **Identity is `id`.** Never use `label` as a form id or React key. Multiple unlabeled
-  choices are all labelled `Choose`.
+- **Field IDs are generated.** Raycast uses `prompt-0`, `prompt-1`, and so on.
+  Template expansion uses the original prompt IDs, which can contain token text.
+  Multiple unlabeled choices are all labelled `Choose`.
 - **Options are non-empty.** `parseChoiceArg()` returns `null` for an empty list, so no
   choice prompt with zero options reaches the form.
 - **The default is a real option.** `defaultValue === options[0]` for every choice prompt.
 - **Options are unique.** The parser collapses duplicates before rendering.
 - **Values are strings.** Dropdown items use the option text as both `value` and `title`.
-- **Every action submits.** Copy, paste, and type are all `Action.SubmitForm` entries; the
-  selected action receives the same `{ [id]: value }` map, which the panel passes to
-  `expandTemplate(raw, { values })`. (Multi-submit currently blocked by the `⌘↵` no-op
-  bug — see Known issue above.)
+- **All actions use the current values.** The selected action receives a
+  `{ [id]: value }` map, which the panel passes to `expandTemplate(raw, { values })`.
 - **The opening action stays primary.** The action selected in the list is the first form
   action. Copy is always available even when the form was opened from paste or type.
 
@@ -121,12 +98,13 @@ configuration and see
 3. `TemplateArgumentForm` renders fields in prompt order and the content actions with the
    opening action first.
 4. The user selects one option per choice (the first is preselected).
-5. `Action.SubmitForm` starts the chosen action's `onSubmit(values)`, then `pop()` runs.
-6. The panel expands the raw content with those values and runs the action (copy, paste,
-   or type).
+5. The user presses **⌘ + Enter** or clicks the opening action in the form footer.
+   **⌘ + K** opens the action panel for any of the three actions.
+6. The form starts the selected action with the current values and then pops. The
+   panel expands the snippet and copies, pastes, or types it.
 
-Step 5 is currently blocked by the open `⌘↵` no-op bug — see the Known issue under
-Rendering Rules.
+The native form shortcut requires **⌘**. Plain **Enter** can act on the focused
+field. Custom shortcuts require a modifier. [Raycast action panel](https://developers.raycast.com/api-reference/user-interface/action-panel) · [Keyboard API](https://developers.raycast.com/api-reference/keyboard)
 
 ## Edge Cases
 
@@ -140,6 +118,8 @@ Rendering Rules.
 - **Escaped token:** `\{{choice:...}}` is ignored by discovery and emitted literally.
 
 ## Related
+
+- [Manual Raycast test guide](../../../../docs/important/how-to-test.md)
 
 - Module plan:
   `src/components/docs/plans/2026/11/19/2026-11-19-choice-dropdown-form.md`

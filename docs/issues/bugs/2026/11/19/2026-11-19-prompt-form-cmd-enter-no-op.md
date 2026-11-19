@@ -1,9 +1,23 @@
 # Prompt Form Copy/Paste/Type Submit Actions (⌘↵ No-Op)
 
 **Date**: 2026-11-19
-**Status**: Open
+**Status**: Fixed and verified in Raycast
 **Scope**: Parent extension (`raycast-snippetsurfer`) + `src/components`
 **Reported by**: User, 2026-11-19
+
+## Fix
+
+Using one native `Action.SubmitForm` still reproduced the failure with the
+original Model snippet. Both Command+Enter and clicking the Copy button left
+the clipboard unchanged. Giving each Raycast form field a generated ID
+(`prompt-0`, `prompt-1`, etc.) restored submission. The form maps those IDs back
+to the original prompt keys for snippet expansion.
+
+The opening action remains the native submit action. The alternate actions
+read the controlled field values. In live Raycast testing, Command+Enter
+copied the edited choice. Copy from the action panel also worked with Copy
+as the opening action and with Paste as the opening action. The sections
+below record the original investigation.
 
 ## Summary
 

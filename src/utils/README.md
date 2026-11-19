@@ -36,8 +36,8 @@ Added on 2026-11-19:
 - The first option is the default and the no-form fallback.
 - Options are split on unescaped `|`, trimmed, de-duplicated, and stripped of empties.
 - `\|`, `\=`, and `\\` escape literal delimiters inside options.
-- A choice prompt is identified by `choice:${rawArgument}`; that id is the form field id
-  and the values-map key.
+- `choice:${rawArgument}` identifies a choice and keys the expander's values map.
+  The form generates its own field IDs and maps submissions back to these keys.
 - `findTemplatePrompts()` returns `kind: "choice"` prompts with a non-empty `options`
   array; `TemplateArgumentForm` renders them as `Form.Dropdown`.
 
@@ -54,4 +54,6 @@ See:
 
 No test framework is configured. Run `npm run lint` and `npm run build`. The choice parser
 was additionally checked with a temporary transpiled Node smoke test covering parsing,
-de-duplication, escaping, fallback, and existing ask/date behavior.
+de-duplication, escaping, fallback, and existing ask/date behavior. The manual
+guide's mixed text and choice fixture was checked against the transpiled expander.
+[How to test](../../docs/important/how-to-test.md)

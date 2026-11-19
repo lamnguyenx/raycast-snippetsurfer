@@ -1,7 +1,7 @@
 # Action-Aware Submit Panel in the Prompt Form
 
 **Date**: 2026-11-19
-**Status**: Implemented — blocked by an open bug (⌘↵ does not submit; see bug docs)
+**Status**: Implemented and verified in live Raycast for both copy paths
 **Module**: `src/components` (`TemplateArgumentForm.tsx`, `CustomActionPanel.tsx`)
 **Parent plan**: [`docs/plans/2026/11/19/2026-11-19-prompt-form-content-actions.md`](../../../../../../../docs/plans/2026/11/19/2026-11-19-prompt-form-content-actions.md)
 
@@ -17,11 +17,13 @@ snippet.
 
 ### `TemplateArgumentForm`
 
-- Props changed from `onSubmit` to `actions: TemplateFormAction[]`
-  (`{ title, icon?, onSubmit(values) }`).
-- Each action renders as an `Action.SubmitForm`; submitting calls the action's
-  `onSubmit(values)` and then `pop()`.
-- Prompt rendering (dropdown vs text field) is unchanged.
+- Receives an ordered `actions: TemplateFormAction[]`. The first action uses
+  `Action.SubmitForm`. The two remaining entries use plain `Action` callbacks.
+- Uses one generated Raycast field ID per prompt. On native submit, the form translates
+  those field IDs back to the prompt IDs expected by `expandTemplate()`.
+- Initializes React state with each prompt's default. Text and dropdown changes update
+  that state, which alternate actions use when invoked.
+- Starts the chosen action and then calls `pop()`.
 
 ### `CustomActionPanel` (`HeavyDutyActionPanel`)
 
@@ -44,33 +46,28 @@ push(<TemplateArgumentForm prompts={prompts} actions={formActions} />);
 
 ## Trials, Errors & Lessons Learnt
 
-- **Design iteration — who is "primary" in the form?** The first draft ordered the form
-  actions by the `primaryAction` preference (mirroring the list panel). That ignores what
-  the user just clicked, so it was replaced by "opening action first". Explicit intent at
-  click time beats a global preference for a secondary view.
-- **Section wrapper broke the submit shortcut.** Wrapping the submit actions in
-  `<ActionPanel.Section title="Use Snippet">` looked tidy and rendered correctly, but
-  `⌘↵` stopped triggering anything. Submit actions now sit as direct `ActionPanel`
-  children. Removing the section was necessary but not sufficient — see the bug.
-- **`pop()` ordering.** `pop()` was moved after the action callback starts, matching the
-  ordering pattern of official Raycast form examples (do the work, then navigate back).
-- **Extraction over duplication.** The notification dialogs, AppleScript paste/type
-  scripts, and fallbacks already lived in the panel; extracting them into runners let the
-  form reuse them without a second copy of that behavior.
-- **Multi-submit remains a suspect.** Even after the section removal the user reports
-  `⌘↵` is inert. All official examples use exactly one `Action.SubmitForm` per form;
-  this is the leading hypothesis in the bug doc. Track
-  [`../../../../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md`](../../../../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md)
-  before extending this pattern.
+- Grouped and direct multi-submit panels both reproduced the no-op. Moving `pop()`
+  did not restore the callback, and a shortcut override was reverted before testing.
+- Switching to one native submit passed a mocked component test. The live form still
+  failed both keyboard submission and a click on Copy. A mocked `onSubmit` bypasses
+  the Raycast bridge, so it could only confirm action order and value handling.
+- The original choice used a prompt ID derived from the raw Model token. Keeping the
+  UI fields on generated IDs restored the real submit callback. The controlled fields
+  let the plain alternate actions read the selected option independently.
+- The native form keeps **⌘ + Enter**. Plain **Enter** remains available to the focused
+  control. The form footer offers a mouse path to the primary action.
+- The live probe used macOS Accessibility to locate controls. Action menu selection
+  needed a targeted mouse click in the tested overlay. Clipboard change plus the
+  expected expanded value confirmed the action ran.
 
 ## Validation
 
-- `npx tsc --noEmit`
-- `npm run lint`
-- `npm run build`
-- Scripted Accessibility check confirmed rendering (buttons, icons, `⌘↵` badge) but could
-  not confirm submission — manual retest says `⌘↵` does not submit
-  (see bug doc).
+- Mocked component check covered all primary action orderings, default and edited
+  alternate values, and navigation after invocation.
+- Live Raycast copied the non-default Model value with **⌘ + Enter**. Copy in the
+  action panel worked as both the primary action and an alternate to Paste.
+- TypeScript, build, and lint passed. Use the [manual test guide](../../../../../../../docs/important/how-to-test.md)
+  to reproduce the UI checks.
 
 ## Related Documents
 

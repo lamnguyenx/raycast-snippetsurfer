@@ -122,21 +122,19 @@ model: opencode-go/deepseek-v4.1-flash
 
 - The first option is selected by default; whitespace around options is trimmed.
 - The form always offers copy, paste, and type actions, so choice snippets can still be copied when paste or type is the configured primary action.
-- After the form opens, submit with **⌘ + Enter** (plain `Enter` is used by the dropdown, mirroring Raycast forms in general).
+- After the form opens, use **⌘ + Enter** to run the action that opened the form. Use **⌘ + K** to pick either of the other actions.
+- For mouse use, select a value and click **Copy to Clipboard** at the bottom of the form when Copy is the opening action.
 - Repeating the exact same `{{choice:...}}` token reuses one dropdown and its value.
 - Escape a literal pipe with `\|`, a literal `=` with `\=`, or a literal backslash with `\\` inside an option.
 - Choices can be combined with `{{ask:...}}` and date/time tokens in the same form.
 
-> **Known issue (2026-11-19):** `⌘ + Enter` currently does not submit the prompt form — the
-> UI does not react. Snippets without prompt tokens are unaffected. See
-> [`docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md`](docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md).
-
 ## Documentation
 
+- [How to Test SnippetSurfer](docs/important/how-to-test.md) — local checks and Raycast shortcut verification.
 - [Snippet Tokens & Parameters](docs/important/snippet-tokens.md) — full token reference.
 - [Multiple-choice prompts plan](docs/plans/2026/11/19/2026-11-19-multiple-choice-prompts.md) — design, trials, and lessons learnt.
-- [Prompt form content actions plan](docs/plans/2026/11/19/2026-11-19-prompt-form-content-actions.md) — copy/paste/type actions after filling in prompts.
-- [Prompt form ⌘↵ no-op bug](docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md) — open issue, attempted fixes, and follow-up plan.
+- [Prompt form content actions plan](docs/plans/2026/11/19/2026-11-19-prompt-form-content-actions.md) — action design, the submit regression, and live verification.
+- [Prompt form ⌘↵ no-op bug](docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md) — regression history and verification status.
 - [Token engine module](src/utils/README.md) — `TemplateExpander` and token parsing.
 - [Prompt form module](src/components/README.md) — `TemplateArgumentForm` and dropdown rendering.
 - [Parameterized Snippets plan](docs/plans/2026/10/11/2026-10-11-parameterized-clipboards.md) — earlier token/prompt design.
