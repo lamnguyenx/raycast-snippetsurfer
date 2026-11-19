@@ -9,11 +9,21 @@ see `src/utils/docs/important/choice-token.md`.
 `TemplateArgumentForm` receives:
 
 ```ts
+interface TemplateFormAction {
+  title: string;
+  icon?: Image.ImageLike;
+  onSubmit: (values: { [id: string]: string }) => void | Promise<void>;
+}
+
 interface TemplateArgumentFormProps {
   prompts: TemplatePrompt[];
-  onSubmit: (values: { [label: string]: string }) => void;
+  actions: TemplateFormAction[];
 }
 ```
+
+`actions` is the ordered list of content actions (copy, paste, type). The action that
+opened the form is first; the remaining actions follow. Each action becomes its own
+`Action.SubmitForm`, so submitting the form always runs the action the user picked.
 
 `TemplatePrompt` is defined in `src/utils/TemplateExpander.ts`:
 
@@ -28,6 +38,38 @@ interface TemplatePrompt {
 ```
 
 ## Rendering Rules
+
+### Action panel
+
+```tsx
+<ActionPanel>
+  {actions.map((action) => (
+    <Action.SubmitForm
+      key={action.title}
+      title={action.title}
+      icon={action.icon}
+      onSubmit={(values) => {
+        const result = action.onSubmit(values);
+        pop();
+        return result;
+      }}
+    />
+  ))}
+</ActionPanel>
+```
+
+All content actions submit the same form values. The form does not decide whether the
+snippet is copied, pasted, or typed; each action callback owns that behavior.
+
+Keep the `Action.SubmitForm` elements as direct children of `ActionPanel`. Wrapping them in
+an `ActionPanel.Section` can stop Raycast's form submit shortcut (`⌘↵`) from firing.
+
+**Known issue (open, 2026-11-19):** even as direct children, the multi-submit panel does
+not react to `⌘↵` — the badge renders but no `onSubmit` fires. All official Raycast
+examples use exactly one `Action.SubmitForm` per form; multiple submit actions are the
+prime suspect. Until resolved, treat the single-submit shape as the last known-good
+configuration and see
+[`docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md`](../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md).
 
 ### Text prompts (`kind: "text"`)
 
@@ -65,18 +107,26 @@ interface TemplatePrompt {
 - **The default is a real option.** `defaultValue === options[0]` for every choice prompt.
 - **Options are unique.** The parser collapses duplicates before rendering.
 - **Values are strings.** Dropdown items use the option text as both `value` and `title`.
-- **Submission is unchanged.** `Action.SubmitForm` returns one value per prompt id; the
-  panel passes that map to `expandTemplate(raw, { values })`.
+- **Every action submits.** Copy, paste, and type are all `Action.SubmitForm` entries; the
+  selected action receives the same `{ [id]: value }` map, which the panel passes to
+  `expandTemplate(raw, { values })`. (Multi-submit currently blocked by the `⌘↵` no-op
+  bug — see Known issue above.)
+- **The opening action stays primary.** The action selected in the list is the first form
+  action. Copy is always available even when the form was opened from paste or type.
 
 ## User Flow
 
-1. A snippet action reads the raw file.
-2. `findTemplatePrompts()` returns text and choice prompts.
-3. `TemplateArgumentForm` renders fields in prompt order.
+1. The user triggers a content action (copy, paste, or type) from the list.
+2. The panel reads the raw file and `findTemplatePrompts()` returns text and choice prompts.
+3. `TemplateArgumentForm` renders fields in prompt order and the content actions with the
+   opening action first.
 4. The user selects one option per choice (the first is preselected).
-5. `Action.SubmitForm` calls `pop()` and then `onSubmit(values)`.
-6. The panel expands the raw content with those values and runs the original action
-   (copy, paste, or type).
+5. `Action.SubmitForm` starts the chosen action's `onSubmit(values)`, then `pop()` runs.
+6. The panel expands the raw content with those values and runs the action (copy, paste,
+   or type).
+
+Step 5 is currently blocked by the open `⌘↵` no-op bug — see the Known issue under
+Rendering Rules.
 
 ## Edge Cases
 
@@ -93,5 +143,9 @@ interface TemplatePrompt {
 
 - Module plan:
   `src/components/docs/plans/2026/11/19/2026-11-19-choice-dropdown-form.md`
+- Module plan (action-aware submission):
+  `src/components/docs/plans/2026/11/19/2026-11-19-action-submit-form-panel.md`
+- Module bug doc:
+  `src/components/docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md`
 - Token parser reference: `src/utils/docs/important/choice-token.md`
 - Canonical token reference: `docs/important/snippet-tokens.md`

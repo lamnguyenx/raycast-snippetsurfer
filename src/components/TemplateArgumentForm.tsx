@@ -1,13 +1,21 @@
-import { Action, ActionPanel, Form, useNavigation } from "@raycast/api";
+import { Action, ActionPanel, Form, Image, useNavigation } from "@raycast/api";
 import type { TemplatePrompt } from "../utils/TemplateExpander";
+
+export interface TemplateFormAction {
+  title: string;
+  icon?: Image.ImageLike;
+  onSubmit: (values: { [id: string]: string }) => void | Promise<void>;
+}
 
 interface TemplateArgumentFormProps {
   prompts: TemplatePrompt[];
-  onSubmit: (values: { [id: string]: string }) => void;
+  actions: TemplateFormAction[];
 }
 
 // Collects values for {{ask:Label}} and {{choice:...}} tokens before a snippet action runs.
-export default function TemplateArgumentForm({ prompts, onSubmit }: TemplateArgumentFormProps) {
+// Every content action (copy, paste, type) is a submit action so the user can pick how to
+// use the snippet after filling in the form.
+export default function TemplateArgumentForm({ prompts, actions }: TemplateArgumentFormProps) {
   const { pop } = useNavigation();
 
   return (
@@ -15,13 +23,18 @@ export default function TemplateArgumentForm({ prompts, onSubmit }: TemplateArgu
       navigationTitle="Fill In Snippet Values"
       actions={
         <ActionPanel>
-          <Action.SubmitForm
-            title="Insert Snippet"
-            onSubmit={(values: Form.Values) => {
-              pop();
-              onSubmit(values as { [id: string]: string });
-            }}
-          />
+          {actions.map((action) => (
+            <Action.SubmitForm
+              key={action.title}
+              title={action.title}
+              icon={action.icon}
+              onSubmit={(values: Form.Values) => {
+                const result = action.onSubmit(values as { [id: string]: string });
+                pop();
+                return result;
+              }}
+            />
+          ))}
         </ActionPanel>
       }
     >

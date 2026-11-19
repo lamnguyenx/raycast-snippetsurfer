@@ -91,6 +91,17 @@ an empty dropdown.
 The temporary expander smoke test covered the id/value mapping that the form relies on
 (selecting a non-default option and expanding it through the same key).
 
+## Follow-up: Action-Aware Submission
+
+The original form had one **Insert Snippet** submit action. It now renders one
+`Action.SubmitForm` per content action (copy, paste, type), with the action that opened the
+form listed first. **Known caveat (open bug):** with multiple submit actions, `⌘↵` renders
+on the first button but does not fire any `onSubmit` — submission is a no-op. See:
+
+- [`Prompt Form Content Actions`](../../../../../../../docs/plans/2026/11/19/2026-11-19-prompt-form-content-actions.md)
+- [`⌘↵ no-op bug (module)`](../../../../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md)
+- [`⌘↵ no-op bug (parent)`](../../../../../../../docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md)
+
 ## Related Documents
 
 - Parent plan: `docs/plans/2026/11/19/2026-11-19-multiple-choice-prompts.md`

@@ -5,6 +5,7 @@ import {
   Action,
   ActionPanel,
   Icon,
+  Image,
   closeMainWindow,
   showToast,
   Toast,
@@ -15,6 +16,12 @@ import {
 import type { Snippet, HeavyDutySnippet } from "../types";
 import * as path from "path";
 import TemplateArgumentForm from "./TemplateArgumentForm";
+
+interface ContentAction {
+  title: string;
+  icon: Image.ImageLike;
+  run: (content: string) => void | Promise<void>;
+}
 
 const CustomActionPanel = ({
   handleAction,
@@ -97,32 +104,6 @@ const HeavyDutyActionPanel = ({
 }) => {
   const { push } = useNavigation();
 
-  // Run an action against the snippet content after expanding dynamic tokens.
-  // If the content contains {{ask:...}} placeholders, prompt for them first.
-  const withContent = async (action: (content: string) => void | Promise<void>) => {
-    const raw = await readSnippetContent(snippet.fullPath);
-
-    if (!enableTemplates) {
-      await action(raw);
-      return;
-    }
-
-    const prompts = findTemplatePrompts(raw);
-    if (prompts.length === 0) {
-      await action(expandTemplate(raw));
-      return;
-    }
-
-    push(
-      <TemplateArgumentForm
-        prompts={prompts}
-        onSubmit={(values) => {
-          action(expandTemplate(raw, { values }));
-        }}
-      />
-    );
-  };
-
   // Show a macOS auto-dismissing dialog, falling back to a Raycast toast.
   const notify = (dialogTitle: string, toastTitle: string, message: string) => {
     if (process.platform !== "darwin") {
@@ -159,25 +140,24 @@ const HeavyDutyActionPanel = ({
     }
   };
 
-  const copyAndPaste = () =>
-    withContent(async (content) => {
-      try {
-        await Clipboard.copy(content);
-        notify("Snippet Copied!", "Snippet Copied!", `${snippet.name} - Press Cmd+V to paste`);
+  const copyContent = async (content: string) => {
+    try {
+      await Clipboard.copy(content);
+      notify("Snippet Copied!", "Snippet Copied!", `${snippet.name} - Press Cmd+V to paste`);
 
-        // Brief pause to let notification appear
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      // Brief pause to let notification appear
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Close Raycast window after notification
-        closeMainWindow();
-      } catch (error) {
-        notifyError(
-          "Snippet Copy Failed",
-          "Failed to copy snippet",
-          error instanceof Error ? error.message : "Unknown error"
-        );
-      }
-    });
+      // Close Raycast window after notification
+      closeMainWindow();
+    } catch (error) {
+      notifyError(
+        "Snippet Copy Failed",
+        "Failed to copy snippet",
+        error instanceof Error ? error.message : "Unknown error"
+      );
+    }
+  };
 
   const copyRealFilePath = async () => {
     await Clipboard.copy(snippet.fullPath);
@@ -185,15 +165,14 @@ const HeavyDutyActionPanel = ({
     await new Promise((resolve) => setTimeout(resolve, 100));
   };
 
-  const pasteToActiveApp = () =>
-    withContent(async (content) => {
-      try {
-        // Copy to clipboard first
-        await Clipboard.copy(content);
+  const pasteContent = async (content: string) => {
+    try {
+      // Copy to clipboard first
+      await Clipboard.copy(content);
 
-        // Use AppleScript to paste - run in a background independent process
-        if (process.platform === "darwin") {
-          const pasteScript = `
+      // Use AppleScript to paste - run in a background independent process
+      if (process.platform === "darwin") {
+        const pasteScript = `
           tell application "System Events"
             tell process "Raycast"
               keystroke "w" using {command down}
@@ -203,50 +182,49 @@ const HeavyDutyActionPanel = ({
             delay 0.1
           end tell
         `;
-          spawn("osascript", ["-e", pasteScript]);
-        }
-
-        // Only show dialog for snippets in the primary folder
-        const isPrimaryFolder = !locationType || locationType === "search" || locationType === "primary";
-        if (process.platform === "darwin" && isPrimaryFolder) {
-          notify("Snippet Pasted!", "Snippet Pasted!", `${snippet.name} - Content pasted automatically`);
-        } else {
-          showToast({
-            style: Toast.Style.Success,
-            title: "Snippet Pasted!",
-            message: `${snippet.name} - Content pasted automatically`,
-          });
-        }
-
-        // Close the window with a slight delay
-        setTimeout(() => closeMainWindow(), 200);
-      } catch (error) {
-        // Fallback to just copying if paste fails
-        try {
-          await Clipboard.copy(content);
-          notify(
-            "Snippet Copied!",
-            "Fallback: Snippet Copied!",
-            `${snippet.name} - Press Cmd+V to paste (auto-paste failed)`
-          );
-        } catch (fallbackError) {
-          showToast({
-            style: Toast.Style.Failure,
-            title: "Failed to handle snippet",
-            message: error instanceof Error ? error.message : "Unknown error",
-          });
-        }
+        spawn("osascript", ["-e", pasteScript]);
       }
-    });
 
-  const typeToActiveApp = () =>
-    withContent(async (content) => {
+      // Only show dialog for snippets in the primary folder
+      const isPrimaryFolder = !locationType || locationType === "search" || locationType === "primary";
+      if (process.platform === "darwin" && isPrimaryFolder) {
+        notify("Snippet Pasted!", "Snippet Pasted!", `${snippet.name} - Content pasted automatically`);
+      } else {
+        showToast({
+          style: Toast.Style.Success,
+          title: "Snippet Pasted!",
+          message: `${snippet.name} - Content pasted automatically`,
+        });
+      }
+
+      // Close the window with a slight delay
+      setTimeout(() => closeMainWindow(), 200);
+    } catch (error) {
+      // Fallback to just copying if paste fails
       try {
-        // Escape backslashes and quotes for the AppleScript string literal
-        const escapedContent = content.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        await Clipboard.copy(content);
+        notify(
+          "Snippet Copied!",
+          "Fallback: Snippet Copied!",
+          `${snippet.name} - Press Cmd+V to paste (auto-paste failed)`
+        );
+      } catch (fallbackError) {
+        showToast({
+          style: Toast.Style.Failure,
+          title: "Failed to handle snippet",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+  };
 
-        // Build a self-contained AppleScript that closes the window and types
-        const typeScript = `
+  const typeContent = async (content: string) => {
+    try {
+      // Escape backslashes and quotes for the AppleScript string literal
+      const escapedContent = content.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+      // Build a self-contained AppleScript that closes the window and types
+      const typeScript = `
         tell application "System Events"
           tell process "Raycast"
             keystroke "w" using {command down}
@@ -256,37 +234,69 @@ const HeavyDutyActionPanel = ({
           delay 0.1
         end tell
       `;
-        spawn("osascript", ["-e", typeScript]);
+      spawn("osascript", ["-e", typeScript]);
 
-        // Only show dialog for snippets in the primary folder
-        const isPrimaryFolder = !locationType || locationType === "search" || locationType === "primary";
-        if (process.platform === "darwin" && isPrimaryFolder) {
-          notify("Snippet Typed!", "Snippet Typed!", `${snippet.name} - Content typed automatically`);
-        } else {
-          showToast({
-            style: Toast.Style.Success,
-            title: "Snippet Typed!",
-            message: `${snippet.name} - Content typed automatically`,
-          });
-        }
-
-        setTimeout(() => closeMainWindow(), 100);
-      } catch (error) {
-        // Fallback to clipboard method if AppleScript fails
-        await Clipboard.copy(content);
-        notify(
-          "Snippet Copied!",
-          "Fallback: Snippet Copied!",
-          `${snippet.name} - Press Cmd+V to paste (typing failed)`
-        );
+      // Only show dialog for snippets in the primary folder
+      const isPrimaryFolder = !locationType || locationType === "search" || locationType === "primary";
+      if (process.platform === "darwin" && isPrimaryFolder) {
+        notify("Snippet Typed!", "Snippet Typed!", `${snippet.name} - Content typed automatically`);
+      } else {
+        showToast({
+          style: Toast.Style.Success,
+          title: "Snippet Typed!",
+          message: `${snippet.name} - Content typed automatically`,
+        });
       }
-    });
+
+      setTimeout(() => closeMainWindow(), 100);
+    } catch (error) {
+      // Fallback to clipboard method if AppleScript fails
+      await Clipboard.copy(content);
+      notify("Snippet Copied!", "Fallback: Snippet Copied!", `${snippet.name} - Press Cmd+V to paste (typing failed)`);
+    }
+  };
+
+  const copyAction: ContentAction = { title: "Copy to Clipboard", icon: Icon.Clipboard, run: copyContent };
+  const pasteAction: ContentAction = { title: "Paste to Active App", icon: Icon.ArrowRight, run: pasteContent };
+  const typeAction: ContentAction = { title: "Type to Active App", icon: Icon.Keyboard, run: typeContent };
+  const contentActions = [copyAction, pasteAction, typeAction];
+
+  // Read the raw snippet, collect prompt values when needed, then run the chosen action.
+  const withContent = async (action: ContentAction) => {
+    const raw = await readSnippetContent(snippet.fullPath);
+
+    if (!enableTemplates) {
+      await action.run(raw);
+      return;
+    }
+
+    const prompts = findTemplatePrompts(raw);
+    if (prompts.length === 0) {
+      await action.run(expandTemplate(raw));
+      return;
+    }
+
+    // The action that opened the form stays primary; the other content actions remain
+    // available so a choice snippet can still be copied, pasted, or typed.
+    const formActions = [action, ...contentActions.filter((candidate) => candidate !== action)].map((candidate) => ({
+      title: candidate.title,
+      icon: candidate.icon,
+      onSubmit: (values: { [id: string]: string }) => candidate.run(expandTemplate(raw, { values })),
+    }));
+
+    push(<TemplateArgumentForm prompts={prompts} actions={formActions} />);
+  };
 
   const actions = [
-    <Action title="Copy to Clipboard" icon={Icon.Clipboard} key="copyAndPaste" onAction={copyAndPaste} />,
+    <Action
+      title={copyAction.title}
+      icon={copyAction.icon}
+      key="copyAndPaste"
+      onAction={() => withContent(copyAction)}
+    />,
     <Action title="Copy Real File Path" icon={Icon.Link} key="copyFilePath" onAction={copyRealFilePath} />,
-    <Action title="Paste to Active App" icon={Icon.ArrowRight} key="paste" onAction={pasteToActiveApp} />,
-    <Action title="Type to Active App" icon={Icon.Keyboard} key="type" onAction={typeToActiveApp} />,
+    <Action title={pasteAction.title} icon={pasteAction.icon} key="paste" onAction={() => withContent(pasteAction)} />,
+    <Action title={typeAction.title} icon={typeAction.icon} key="type" onAction={() => withContent(typeAction)} />,
   ];
 
   let reorderedActions = actions;

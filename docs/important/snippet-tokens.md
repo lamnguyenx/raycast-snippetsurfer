@@ -64,6 +64,11 @@ escape it when the first option itself contains `=` (e.g. `{{choice:a\=b|c}}`).
 - **Escaping.** Prefix with a backslash to emit a token literally: `\{{date}}` → `{{date}}`.
 - **Prompts are unique.** One text field per distinct `ask` label; one dropdown per
   distinct `choice` token. Repeated prompts share the selected value.
+- **All content actions are available.** After filling the prompt form, choose **Copy to
+  Clipboard**, **Paste to Active App**, or **Type to Active App**. The action you chose is
+  listed first, and copy is always available. (Known issue, open 2026-11-19: `⌘↵`
+  currently does not submit this form — see
+  [the bug doc](../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md).)
 - **Values are not stored.** Prompt values are not remembered between uses.
 
 ## Examples
@@ -91,13 +96,18 @@ model: {{choice:Model=VAI 2/glm-5.3|opencode-go/deepseek-v4.1-flash}}
 - Expansion, prompt parsing & choice parsing:
   [`src/utils/TemplateExpander.ts`](../../src/utils/TemplateExpander.ts) —
   [module reference](../../src/utils/docs/important/choice-token.md)
-- Prompt form UI (text fields & dropdowns):
+- Prompt form UI (text fields, dropdowns & submit actions):
   [`src/components/TemplateArgumentForm.tsx`](../../src/components/TemplateArgumentForm.tsx) —
   [module reference](../../src/components/docs/important/choice-form.md)
 - Action wiring: `src/components/CustomActionPanel.tsx` (`HeavyDutyActionPanel`)
 - Preference: `package.json` → `enableTemplates`
 
+Open issues:
+
+- [Prompt form `⌘↵` no-op](../issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md)
+
 Design and lessons learnt:
 
 - [Multiple-choice prompts plan](../plans/2026/11/19/2026-11-19-multiple-choice-prompts.md)
+- [Prompt form content actions plan](../plans/2026/11/19/2026-11-19-prompt-form-content-actions.md)
 - [Parameterized snippets plan](../plans/2026/10/11/2026-10-11-parameterized-clipboards.md)

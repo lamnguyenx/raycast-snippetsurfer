@@ -105,7 +105,7 @@ When a snippet should offer a fixed set of values instead of free text, use a `{
 model: {{choice:VAI 2/glm-5.3|opencode-go/deepseek-v4.1-flash}}
 ```
 
-Using the snippet opens a small form with a dropdown (the first option is selected by default), then inserts the chosen value:
+Using the snippet opens a small form with a dropdown (the first option is selected by default). After choosing a value, pick **Copy to Clipboard**, **Paste to Active App**, or **Type to Active App**; the action you chose is listed first. The chosen value is inserted as:
 
 ```text
 model: opencode-go/deepseek-v4.1-flash
@@ -121,14 +121,22 @@ model: opencode-go/deepseek-v4.1-flash
 ### Behavior
 
 - The first option is selected by default; whitespace around options is trimmed.
+- The form always offers copy, paste, and type actions, so choice snippets can still be copied when paste or type is the configured primary action.
+- After the form opens, submit with **⌘ + Enter** (plain `Enter` is used by the dropdown, mirroring Raycast forms in general).
 - Repeating the exact same `{{choice:...}}` token reuses one dropdown and its value.
 - Escape a literal pipe with `\|`, a literal `=` with `\=`, or a literal backslash with `\\` inside an option.
 - Choices can be combined with `{{ask:...}}` and date/time tokens in the same form.
+
+> **Known issue (2026-11-19):** `⌘ + Enter` currently does not submit the prompt form — the
+> UI does not react. Snippets without prompt tokens are unaffected. See
+> [`docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md`](docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md).
 
 ## Documentation
 
 - [Snippet Tokens & Parameters](docs/important/snippet-tokens.md) — full token reference.
 - [Multiple-choice prompts plan](docs/plans/2026/11/19/2026-11-19-multiple-choice-prompts.md) — design, trials, and lessons learnt.
+- [Prompt form content actions plan](docs/plans/2026/11/19/2026-11-19-prompt-form-content-actions.md) — copy/paste/type actions after filling in prompts.
+- [Prompt form ⌘↵ no-op bug](docs/issues/bugs/2026/11/19/2026-11-19-prompt-form-cmd-enter-no-op.md) — open issue, attempted fixes, and follow-up plan.
 - [Token engine module](src/utils/README.md) — `TemplateExpander` and token parsing.
 - [Prompt form module](src/components/README.md) — `TemplateArgumentForm` and dropdown rendering.
 - [Parameterized Snippets plan](docs/plans/2026/10/11/2026-10-11-parameterized-clipboards.md) — earlier token/prompt design.
